@@ -20,3 +20,6 @@
 	path = src/slam_toolbox
 	url = git@github.com:Huyhust13/slam_toolbox.git
 	branch = pi4
+[submodule "src/hbot_simulation"]
+	path = src/hbot_simulation
+	url = git@github.com:HbotVN/hbot_simulation.git
