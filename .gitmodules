@@ -3,10 +3,10 @@
 	url = git@github.com:HbotVN/hbot_bringup.git
 [submodule "src/hbot_description"]
 	path = src/hbot_description
-	url = git@github.com:Huyhust13/hbot_description.git
+	url = git@github.com:HbotVN/hbot_description.git
 [submodule "src/hbot_driver"]
 	path = src/hbot_driver
-	url = git@github.com:Huyhust13/hbot_driver.git
+	url = git@github.com:HbotVN/hbot_driver.git
 	branch = yahboom_controller
 [submodule "src/lds_006_driver"]
 	path = src/lds_006_driver
