@@ -16,3 +16,6 @@
 [submodule "src/lds_006_driver"]
 	path = src/lds_006_driver
 	url = git@github.com:HbotVN/lds_006_driver.git
+[submodule "src/hbot_simulation"]
+	path = src/hbot_simulation
+	url = git@github.com:HbotVN/hbot_simulation.git
