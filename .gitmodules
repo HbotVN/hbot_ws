@@ -1,0 +1,18 @@
+[submodule "src/hbot_bringup"]
+	path = src/hbot_bringup
+	url = git@github.com:HbotVN/hbot_bringup.git
+[submodule "src/hbot_driver"]
+	path = src/hbot_driver
+	url = git@github.com:HbotVN/hbot_driver.git
+[submodule "src/navigation2"]
+	path = src/navigation2
+	url = git@github.com:HbotVN/hbot_nav2.git
+[submodule "src/slam_toolbox"]
+	path = src/slam_toolbox
+	url = git@github.com:HbotVN/slam_toolbox.git
+[submodule "src/hbot_description"]
+	path = src/hbot_description
+	url = git@github.com:HbotVN/hbot_description.git
+[submodule "src/lds_006_driver"]
+	path = src/lds_006_driver
+	url = git@github.com:HbotVN/lds_006_driver.git
