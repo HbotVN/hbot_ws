@@ -1,0 +1,16 @@
+services:
+  hbot_pi_build:
+    build:
+      context: ../../
+      dockerfile: docker/pi/Dockerfile
+    image: hbot_pi:latest
+    container_name: hbot_pi_build_container
+    platform: linux/arm64
+    volumes:
+      # Mount workspace source code
+      - ../../:/root/hbot_ws
+      # Map host folders to build/install/log for Pi instead of anonymous volumes
+      - ../../build_pi:/root/hbot_ws/build_pi
+      - ../../install_pi:/root/hbot_ws/install_pi
+      - ../../log_pi:/root/hbot_ws/log_pi
+    command: bash -c "./build_packages_pi.sh"
