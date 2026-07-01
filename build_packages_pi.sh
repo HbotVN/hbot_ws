@@ -37,13 +37,14 @@ if [ $# -eq 0 ]; then
 	colcon --log-base log_pi build \
 		--build-base build_pi \
 		--install-base install_pi \
-		--cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
+		--packages-ignore hbot_simulation \
+		--cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DBUILD_TESTING=OFF
 else
 	colcon --log-base log_pi build \
 		--build-base build_pi \
 		--install-base install_pi \
 		--packages-select "$@" \
-		--cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
+		--cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DBUILD_TESTING=OFF
 fi
 
 # Fix file ownership on host if running as root inside Docker

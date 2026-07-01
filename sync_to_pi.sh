@@ -5,9 +5,9 @@ set -e
 workspace_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$workspace_dir"
 
-PI_USER=${1:-ubuntu}
-PI_HOST=${2:-192.168.1.100}
-PI_DEST=${3:-~/hbot_ws}
+PI_USER=${1:-root}
+PI_HOST=${2:-hbot.local}
+PI_DEST=${3:-/root/hbot_ws}
 
 echo "==========================================="
 echo "HBOT Pi Sync Tool"
