@@ -93,68 +93,109 @@
       <!-- Right Panel: Tabs System -->
       <section class="stats-panel glass-panel">
         <div class="tabs-header">
-          <button class="tab-btn active" data-tab="system-tab">
-            <i class="fa-solid fa-gauge-high"></i> System Monitor
+          <button class="tab-btn active" data-tab="robot-tab">
+            <i class="fa-solid fa-robot"></i> Robot Status
+          </button>
+          <button class="tab-btn" data-tab="system-tab">
+            <i class="fa-solid fa-microchip"></i> Pi Status
           </button>
           <button class="tab-btn" data-tab="wifi-tab">
-            <i class="fa-solid fa-wifi-slash"></i> Wi-Fi Manager
+            <i class="fa-solid fa-wifi"></i> Wi-Fi Manager
           </button>
         </div>
 
-        <div class="tab-content active" id="system-tab">
-          <div class="system-grid">
-            <!-- CPU Progress Ring -->
+        <!-- Tab 1: Robot Status (Active by Default) -->
+        <div class="tab-content active" id="robot-tab">
+          <div class="robot-status-grid">
+            <!-- Speed Card -->
             <div class="stat-card glass-inset">
-              <span class="stat-label">CPU USAGE</span>
-              <div class="progress-ring-container">
-                <svg class="progress-ring" width="120" height="120">
-                  <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="8" fill="transparent" r="50" cx="60" cy="60" />
-                  <circle class="progress-ring__circle" id="cpu-ring" stroke="var(--neon-cyan)" stroke-dasharray="314.16 314.16" stroke-dashoffset="314.16" stroke-width="8" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" />
-                </svg>
-                <div class="progress-ring-text" id="cpu-text">0%</div>
+              <span class="stat-label"><i class="fa-solid fa-gauge-simple-high"></i> LIVE VELOCITY</span>
+              <div class="velocity-grid-large">
+                <div class="vel-display">
+                  <span class="vel-value-large" id="odom-vx">0.00</span>
+                  <span class="vel-unit-large">m/s</span>
+                  <span class="vel-lbl">Linear (vx)</span>
+                </div>
+                <div class="vel-display">
+                  <span class="vel-value-large" id="odom-wz">0.00</span>
+                  <span class="vel-unit-large">rad/s</span>
+                  <span class="vel-lbl">Angular (wz)</span>
+                </div>
               </div>
             </div>
 
-            <!-- RAM Progress Ring -->
+            <!-- Pose Card -->
             <div class="stat-card glass-inset">
-              <span class="stat-label">RAM USAGE</span>
-              <div class="progress-ring-container">
-                <svg class="progress-ring" width="120" height="120">
-                  <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="8" fill="transparent" r="50" cx="60" cy="60" />
-                  <circle class="progress-ring__circle" id="ram-ring" stroke="var(--neon-blue)" stroke-dasharray="314.16 314.16" stroke-dashoffset="314.16" stroke-width="8" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" />
-                </svg>
-                <div class="progress-ring-text" id="ram-text">0%</div>
+              <span class="stat-label"><i class="fa-solid fa-location-crosshairs"></i> ODOMETRY POSE</span>
+              <div class="pose-grid">
+                <div class="pose-item">
+                  <span class="pose-lbl">X position</span>
+                  <span class="pose-val" id="pose-x">0.00 m</span>
+                </div>
+                <div class="pose-item">
+                  <span class="pose-lbl">Y position</span>
+                  <span class="pose-val" id="pose-y">0.00 m</span>
+                </div>
+                <div class="pose-item">
+                  <span class="pose-lbl">Orientation (Yaw)</span>
+                  <span class="pose-val" id="pose-yaw">0.00 rad</span>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <!-- Disk Usage -->
-            <div class="stat-card glass-inset full-width">
-              <div class="disk-header">
-                <span class="stat-label"><i class="fa-solid fa-hard-drive"></i> STORAGE USE</span>
-                <span id="disk-text">0%</span>
-              </div>
-              <div class="progress-bar-bg">
-                <div class="progress-bar" id="disk-bar" style="width: 0%;"></div>
+        <!-- Tab 2: System Monitor (Pi Stats) -->
+        <div class="tab-content" id="system-tab">
+          <div class="system-grid-compact">
+            <!-- Host System Health Card -->
+            <div class="stat-card glass-inset compact-card">
+              <span class="stat-label"><i class="fa-solid fa-circle-info"></i> SYSTEM METRICS</span>
+              <div class="metrics-stack">
+                <!-- CPU -->
+                <div class="mini-metric-item">
+                  <div class="mini-metric-header">
+                    <span class="mini-lbl">CPU</span>
+                    <span class="mini-val" id="cpu-text">0%</span>
+                  </div>
+                  <div class="mini-bar-bg">
+                    <div class="mini-bar color-cyan" id="cpu-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+                <!-- RAM -->
+                <div class="mini-metric-item">
+                  <div class="mini-metric-header">
+                    <span class="mini-lbl">RAM</span>
+                    <span class="mini-val" id="ram-text">0%</span>
+                  </div>
+                  <div class="mini-bar-bg">
+                    <div class="mini-bar color-blue" id="ram-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
+                <!-- Storage -->
+                <div class="mini-metric-item">
+                  <div class="mini-metric-header">
+                    <span class="mini-lbl">Storage</span>
+                    <span class="mini-val" id="disk-text">0%</span>
+                  </div>
+                  <div class="mini-bar-bg">
+                    <div class="mini-bar color-green" id="disk-bar" style="width: 0%;"></div>
+                  </div>
+                </div>
               </div>
             </div>
 
             <!-- Network Speed Card -->
-            <div class="stat-card glass-inset full-width net-card">
-              <span class="stat-label"><i class="fa-solid fa-network-wired"></i> NETWORK THROUGHPUT</span>
-              <div class="net-speeds">
-                <div class="speed-item">
-                  <i class="fa-solid fa-arrow-down icon-cyan"></i>
-                  <div>
-                    <span class="speed-value" id="net-rx">0.0</span> <span class="speed-unit">KB/s</span>
-                    <div class="speed-lbl">Download</div>
-                  </div>
+            <div class="stat-card glass-inset compact-card">
+              <span class="stat-label"><i class="fa-solid fa-arrow-right-arrow-left"></i> NETWORK THROUGHPUT</span>
+              <div class="net-speeds-compact">
+                <div class="net-speed-row">
+                  <span><i class="fa-solid fa-arrow-down icon-cyan"></i> Down:</span>
+                  <span class="net-val"><span id="net-rx">0.0</span> KB/s</span>
                 </div>
-                <div class="speed-item">
-                  <i class="fa-solid fa-arrow-up icon-blue"></i>
-                  <div>
-                    <span class="speed-value" id="net-tx">0.0</span> <span class="speed-unit">KB/s</span>
-                    <div class="speed-lbl">Upload</div>
-                  </div>
+                <div class="net-speed-row">
+                  <span><i class="fa-solid fa-arrow-up icon-blue"></i> Up:</span>
+                  <span class="net-val"><span id="net-tx">0.0</span> KB/s</span>
                 </div>
               </div>
             </div>
@@ -176,47 +217,36 @@
           </div>
 
           <!-- STA Mode Content -->
-          <div id="wifi-sta-controls">
-            <!-- Scanned Networks Section -->
-            <div class="wifi-section-header">
-              <h3>Visible Networks</h3>
-              <button class="action-btn" id="btn-scan-wifi"><i class="fa-solid fa-rotate"></i> Scan</button>
-            </div>
-            <div class="wifi-list glass-inset" id="wifi-networks-list">
-              <div class="list-placeholder">Click Scan to search for networks...</div>
-            </div>
-
-            <!-- Saved Profiles Section -->
-            <div class="wifi-section-header margin-top">
-              <h3>Saved Connections</h3>
-              <button class="action-btn" id="btn-refresh-saved"><i class="fa-solid fa-clock-rotate-left"></i> Refresh</button>
-            </div>
-            <div class="wifi-list glass-inset" id="wifi-saved-list">
-              <div class="list-placeholder">Loading saved connections...</div>
-            </div>
+          <div id="wifi-sta-controls" style="padding: 10px 15px; margin-bottom: 15px; border-radius: 8px; background: rgba(5,201,122,0.1); border: 1px solid var(--neon-green); color: var(--neon-green); font-size: 0.85rem; text-align: center; font-weight: 500;">
+            <i class="fa-solid fa-circle-check" style="margin-right: 5px; filter: drop-shadow(0 0 4px var(--neon-green));"></i> Client Mode (STA) Active. Connected to local network.
           </div>
 
           <!-- AP Mode Content -->
-          <div id="wifi-ap-controls" style="display: none;">
-            <div class="ap-info-card glass-inset">
-              <i class="fa-solid fa-circle-exclamation ap-warning-icon"></i>
-              <h3>Access Point Active</h3>
-              <p>The robot is broadcasting its own Wi-Fi network. Connect your device using the credentials below:</p>
-              
-              <div class="ap-credential-row">
-                <span class="cred-label">SSID:</span>
-                <span class="cred-val" id="ap-ssid-val">hbot_ap_xxxx</span>
+          <div id="wifi-ap-controls" style="display: none; padding: 10px 15px; margin-bottom: 15px; border-radius: 8px; background: rgba(245,158,11,0.1); border: 1px solid var(--neon-orange); color: var(--neon-orange); font-size: 0.85rem; text-align: center; font-weight: 500; line-height: 1.4;">
+            <i class="fa-solid fa-tower-broadcast" style="margin-right: 5px; filter: drop-shadow(0 0 4px var(--neon-orange));"></i> Hotspot Active: <strong id="ap-ssid-val">hbot_ap</strong> (Gateway: <strong id="ap-gateway-ip">10.42.0.1</strong>).
+          </div>
+
+          <!-- Scanning and Saved List (Always Visible) -->
+          <div class="wifi-scanning-container">
+            <!-- Saved Profiles Section -->
+            <div class="wifi-section-header">
+              <h3>Saved Connections</h3>
+              <button class="action-btn" id="btn-refresh-saved"><i class="fa-solid fa-clock-rotate-left"></i> Refresh</button>
+            </div>
+            <div class="wifi-list glass-inset" id="wifi-saved-list" style="max-height: 180px; overflow-y: auto;">
+              <div class="list-placeholder">Loading saved connections...</div>
+            </div>
+
+            <!-- Scanned Networks Section -->
+            <div class="wifi-section-header margin-top">
+              <h3>Visible Networks</h3>
+              <div class="header-actions" style="display: flex; gap: 0.5rem;">
+                <button class="action-btn" id="btn-manual-wifi"><i class="fa-solid fa-plus"></i> Manual</button>
+                <button class="action-btn" id="btn-scan-wifi"><i class="fa-solid fa-rotate"></i> Scan</button>
               </div>
-              <div class="ap-credential-row">
-                <span class="cred-label">Password:</span>
-                <span class="cred-val">12345678</span>
-              </div>
-              <div class="ap-credential-row">
-                <span class="cred-label">Gateway IP:</span>
-                <span class="cred-val" id="ap-gateway-ip">10.42.0.1</span>
-              </div>
-              
-              <p class="ap-note">Note: To return to Client Mode, toggle the operation mode switch back to STA.</p>
+            </div>
+            <div class="wifi-list glass-inset" id="wifi-networks-list" style="max-height: 240px; overflow-y: auto;">
+              <div class="list-placeholder">Click Scan to search for networks...</div>
             </div>
           </div>
         </div>
@@ -232,7 +262,15 @@
         <button class="close-btn" id="close-modal">&times;</button>
       </div>
       <div class="modal-body">
-        <p>Enter the password for <strong id="modal-ssid-name">Network</strong></p>
+        <!-- Manual SSID input (hidden by default) -->
+        <div id="modal-ssid-input-group" style="display: none; margin-bottom: 1rem;">
+          <p>Network SSID Name:</p>
+          <div class="input-group">
+            <i class="fa-solid fa-wifi input-icon"></i>
+            <input type="text" id="wifi-ssid-input" placeholder="SSID Name">
+          </div>
+        </div>
+        <p id="modal-ssid-text">Enter the password for <strong id="modal-ssid-name">Network</strong></p>
         <div class="input-group">
           <i class="fa-solid fa-key input-icon"></i>
           <input type="password" id="wifi-password-input" placeholder="Password" autofocus>

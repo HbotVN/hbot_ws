@@ -43,6 +43,13 @@ const btnCancelConnect = document.getElementById('btn-cancel-connect');
 const btnConfirmConnect = document.getElementById('btn-confirm-connect');
 const closeModal = document.getElementById('close-modal');
 
+// Manual WiFi Connect
+const btnManualWifi = document.getElementById('btn-manual-wifi');
+const modalSsidInputGroup = document.getElementById('modal-ssid-input-group');
+const modalSsidText = document.getElementById('modal-ssid-text');
+const wifiSsidInput = document.getElementById('wifi-ssid-input');
+let isManualConnect = false;
+
 // Global control state
 let maxLinearSpeed = parseFloat(linearLimitSlider.value);
 let maxAngularSpeed = parseFloat(angularLimitSlider.value);
@@ -127,17 +134,40 @@ socket.on('battery_status', (data) => {
   }
 });
 
+// Receive actual Odometry status (velocities and pose)
+socket.on('odom_status', (data) => {
+  const odomVxEl = document.getElementById('odom-vx');
+  const odomWzEl = document.getElementById('odom-wz');
+  const poseXEl = document.getElementById('pose-x');
+  const poseYEl = document.getElementById('pose-y');
+  const poseYawEl = document.getElementById('pose-yaw');
+
+  if (odomVxEl) odomVxEl.innerText = data.vx.toFixed(2);
+  if (odomWzEl) odomWzEl.innerText = data.wz.toFixed(2);
+  if (poseXEl) poseXEl.innerText = `${data.x.toFixed(2)} m`;
+  if (poseYEl) poseYEl.innerText = `${data.y.toFixed(2)} m`;
+  if (poseYawEl) poseYawEl.innerText = `${data.yaw.toFixed(2)} rad`;
+});
+
 // Receive Pi System status updates
 socket.on('system_status', (data) => {
   ipAddrEl.innerText = data.ip;
   
-  // Update CPU / RAM Progress Rings
-  updateProgressRing('cpu-ring', 'cpu-text', data.cpu);
-  updateProgressRing('ram-ring', 'ram-text', data.ram);
+  // Update CPU, RAM & Disk Progress Bars
+  const cpuBar = document.getElementById('cpu-bar');
+  const cpuText = document.getElementById('cpu-text');
+  if (cpuBar) cpuBar.style.width = `${data.cpu}%`;
+  if (cpuText) cpuText.innerText = `${data.cpu.toFixed(0)}%`;
+
+  const ramBar = document.getElementById('ram-bar');
+  const ramText = document.getElementById('ram-text');
+  if (ramBar) ramBar.style.width = `${data.ram}%`;
+  if (ramText) ramText.innerText = `${data.ram.toFixed(0)}%`;
   
-  // Update Disk Storage bar
-  document.getElementById('disk-bar').style.width = `${data.disk}%`;
-  document.getElementById('disk-text').innerText = `${data.disk.toFixed(0)}%`;
+  const diskBar = document.getElementById('disk-bar');
+  const diskText = document.getElementById('disk-text');
+  if (diskBar) diskBar.style.width = `${data.disk}%`;
+  if (diskText) diskText.innerText = `${data.disk.toFixed(0)}%`;
   
   // Update Network throughput rates
   document.getElementById('net-rx').innerText = data.rx_speed.toFixed(1);
@@ -261,6 +291,9 @@ socket.on('wifi_scan_results', (networks) => {
     `;
     
     wifiItem.addEventListener('click', () => {
+      isManualConnect = false;
+      modalSsidInputGroup.style.display = 'none';
+      modalSsidText.style.display = 'block';
       currentSelectedSsid = net.ssid;
       if (isSecured) {
         modalSsidName.innerText = net.ssid;
@@ -282,11 +315,31 @@ socket.on('wifi_scan_results', (networks) => {
 closeModal.addEventListener('click', () => passwordModal.classList.remove('active'));
 btnCancelConnect.addEventListener('click', () => passwordModal.classList.remove('active'));
 
+if (btnManualWifi) {
+  btnManualWifi.addEventListener('click', () => {
+    isManualConnect = true;
+    modalSsidInputGroup.style.display = 'block';
+    modalSsidText.style.display = 'none';
+    wifiSsidInput.value = '';
+    wifiPasswordInput.value = '';
+    passwordModal.classList.add('active');
+    wifiSsidInput.focus();
+  });
+}
+
 btnConfirmConnect.addEventListener('click', () => {
   const password = wifiPasswordInput.value;
+  let ssid = currentSelectedSsid;
+  if (isManualConnect) {
+    ssid = wifiSsidInput.value.trim();
+    if (!ssid) {
+      showToast("Please enter an SSID name.", "error");
+      return;
+    }
+  }
   passwordModal.classList.remove('active');
-  showToast(`Connecting to ${currentSelectedSsid}...`, 'info');
-  socket.emit('wifi_connect', { ssid: currentSelectedSsid, password: password });
+  showToast(`Connecting to ${ssid}...`, 'info');
+  socket.emit('wifi_connect', { ssid: ssid, password: password });
 });
 
 // Allow Enter key in modal password input

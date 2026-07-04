@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import Float32
+from nav_msgs.msg import Odometry
 from rclpy.parameter import ParameterType
 from rcl_interfaces.msg import ParameterDescriptor
 
@@ -40,10 +41,10 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode=async_mode)
 # Global references for Flask handlers to interact with ROS node
 ros_node = None
 
-def run_cmd(cmd):
+def run_cmd(cmd, timeout=5):
     """Run a shell command and return (returncode, stdout, stderr)"""
     try:
-        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+        res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
         return res.returncode, res.stdout.strip(), res.stderr.strip()
     except subprocess.TimeoutExpired:
         return -1, "", "Command timeout"
@@ -93,6 +94,7 @@ class WebNode(Node):
         self.battery_percent = 0.0
         self.create_subscription(Float32, self.battery_voltage_topic, self.battery_voltage_callback, 10)
         self.create_subscription(Float32, self.battery_percent_topic, self.battery_percent_callback, 10)
+        self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
 
         # Timer for publishing system metrics (1Hz)
         self.create_timer(1.0, self.system_metrics_timer_callback)
@@ -125,6 +127,31 @@ class WebNode(Node):
         socketio.emit('battery_status', {
             'voltage': round(self.battery_voltage, 2),
             'percent': round(self.battery_percent, 1)
+        })
+
+    def odom_callback(self, msg):
+        import math
+        vx = msg.twist.twist.linear.x
+        wz = msg.twist.twist.angular.z
+        x = msg.pose.pose.position.x
+        y = msg.pose.pose.position.y
+        
+        # Calculate yaw orientation from quaternion (z, w)
+        qz = msg.pose.pose.orientation.z
+        qw = msg.pose.pose.orientation.w
+        yaw = 2.0 * math.atan2(qz, qw)
+        # Normalize to -pi to pi range
+        if yaw > math.pi:
+            yaw -= 2.0 * math.pi
+        elif yaw < -math.pi:
+            yaw += 2.0 * math.pi
+
+        socketio.emit('odom_status', {
+            'vx': round(vx, 3),
+            'wz': round(wz, 3),
+            'x': round(x, 3),
+            'y': round(y, 3),
+            'yaw': round(yaw, 3)
         })
 
     def detect_wifi_interface(self):
@@ -253,10 +280,10 @@ def handle_wifi_scan():
     if not ros_node:
         return
     ros_node.get_logger().info("Scanning for WiFi networks...")
-    # Rescan to find new APs
-    run_cmd("nmcli dev wifi rescan")
+    # Rescan to find new APs (timeout 15s)
+    run_cmd("nmcli dev wifi rescan", timeout=15)
     # Fetch scan results
-    ret, stdout, stderr = run_cmd("nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list")
+    ret, stdout, stderr = run_cmd("nmcli -t -f SSID,SIGNAL,SECURITY dev wifi list", timeout=10)
     networks = []
     seen_ssids = set()
     if ret == 0 and stdout:
@@ -305,19 +332,38 @@ def handle_wifi_connect(data):
         return
     ssid = data.get('ssid')
     password = data.get('password')
-    ros_node.get_logger().info(f"Connecting to WiFi: {ssid}")
     
+    # Check if AP is currently active
+    ret_act, stdout_act, _ = run_cmd("nmcli -t -f NAME connection show --active")
+    was_ap_active = False
+    if ret_act == 0 and stdout_act:
+        was_ap_active = 'hbot_ap' in stdout_act.split('\n')
+        
+    ros_node.get_logger().info(f"Connecting to WiFi: {ssid} (was AP active: {was_ap_active})")
+    
+    if was_ap_active:
+        # Explicitly bring down hbot_ap first so the interface is freed to connect as a client
+        ros_node.get_logger().info("Bringing down hbot_ap before connecting...")
+        run_cmd("nmcli connection down hbot_ap")
+        time.sleep(1.0)
+        
     if password:
         cmd = f'nmcli dev wifi connect "{ssid}" password "{password}"'
     else:
         cmd = f'nmcli dev wifi connect "{ssid}"'
         
-    ret, stdout, stderr = run_cmd(cmd)
+    ret, stdout, stderr = run_cmd(cmd, timeout=30)
     if ret == 0:
         ros_node.get_logger().info(f"Connected successfully to {ssid}")
         emit('wifi_connect_response', {'success': True, 'message': f"Connected to {ssid}"})
     else:
         ros_node.get_logger().error(f"Failed to connect to {ssid}: {stderr or stdout}")
+        
+        # If it was AP mode and connection failed, restore the AP hotspot
+        if was_ap_active:
+            ros_node.get_logger().info("Restoring AP hotspot connection...")
+            run_cmd("nmcli connection up hbot_ap")
+            
         emit('wifi_connect_response', {'success': False, 'message': stderr or stdout or "Unknown error"})
 
 @socketio.on('wifi_saved_connections')
@@ -347,11 +393,31 @@ def handle_wifi_connect_saved(data):
     name = data.get('name')
     if not ros_node:
         return
-    ros_node.get_logger().info(f"Connecting to saved network: {name} ({uuid})")
-    ret, stdout, stderr = run_cmd(f'nmcli connection up uuid {uuid}')
+        
+    # Check if AP is currently active
+    ret_act, stdout_act, _ = run_cmd("nmcli -t -f NAME connection show --active")
+    was_ap_active = False
+    if ret_act == 0 and stdout_act:
+        was_ap_active = 'hbot_ap' in stdout_act.split('\n')
+        
+    ros_node.get_logger().info(f"Connecting to saved network: {name} ({uuid}) (was AP active: {was_ap_active})")
+    
+    if was_ap_active:
+        # Explicitly bring down hbot_ap first so the interface is freed to connect as a client
+        ros_node.get_logger().info("Bringing down hbot_ap before connecting...")
+        run_cmd("nmcli connection down hbot_ap")
+        time.sleep(1.0)
+        
+    ret, stdout, stderr = run_cmd(f'nmcli connection up uuid {uuid}', timeout=30)
     if ret == 0:
         emit('wifi_connect_response', {'success': True, 'message': f"Connected to {name}"})
     else:
+        ros_node.get_logger().error(f"Failed to connect to saved network {name} ({uuid}): {stderr or stdout}")
+        # If it was AP mode and connection failed, restore the AP hotspot
+        if was_ap_active:
+            ros_node.get_logger().info("Restoring AP hotspot connection...")
+            run_cmd("nmcli connection up hbot_ap")
+            
         emit('wifi_connect_response', {'success': False, 'message': stderr or stdout or "Failed to connect"})
 
 @socketio.on('wifi_delete_saved')
