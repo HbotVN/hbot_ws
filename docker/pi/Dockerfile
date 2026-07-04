@@ -6,7 +6,12 @@ RUN apt-get update && apt-get install -y \
     bash-completion \
     git \
     sudo \
+    python3-flask \
+    python3-flask-socketio \
+    python3-psutil \
+    python3-eventlet \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Pre-install workspace dependencies using rosdep
 WORKDIR /root/hbot_ws

@@ -1,0 +1,14 @@
+[Unit]
+Description=HBOT Robot Driver and Web Dashboard Service
+After=network.target NetworkManager.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/hbot_ws
+ExecStart=/root/hbot_ws/scripts/web_bringup.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

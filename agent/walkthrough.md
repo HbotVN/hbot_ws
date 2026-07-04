@@ -58,3 +58,126 @@ To start the simulation on your laptop:
    ```bash
    SLAM=False docker compose up
    ```
+
+---
+
+# Walkthrough: Robot Web Dashboard (hbot_web)
+
+We created and compiled the `hbot_web` ROS 2 package. This package provides a premium, responsive, dark-themed dashboard to drive the robot, monitor hardware telemetry, and manage WiFi modes.
+
+## Created Structure
+
+The new package is fully integrated into the ROS 2 workspace.
+
+- **Package Configuration**:
+  - [package.xml](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/package.xml): Declares dependencies on standard ROS 2 messaging/nodes and execution dependencies (`python3-flask`, `python3-flask-socketio`, `python3-psutil`, `python3-eventlet`).
+  - [setup.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/setup.py) & [setup.cfg](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/setup.cfg): Installs the executable entrypoint `web_node` and packs template/static files.
+- **Backend Node**:
+  - [web_node.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/web_node.py): Runs a multi-threaded Flask-SocketIO server, manages publisher to `/cmd_vel`, subscribers to `/battery/*` topics, gathers hardware statistics, and calls `nmcli` to interface with NetworkManager.
+- **Frontend Dashboard**:
+  - [index.html](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/templates/index.html): Responsive glassmorphic container layout.
+  - [style.css](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/static/css/style.css): Neon theme variables, animations, custom sliders, gauges, and modal styles.
+  - [main.js](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/static/js/main.js): Integrates the HTML5 canvas joystick, keyboard mapping, Socket.io data binding, and WiFi connection modals.
+
+---
+
+## Deployment & Verification on Raspberry Pi
+
+Follow these steps to deploy and start the dashboard on your robot:
+
+### Step 1: Sync to Raspberry Pi
+Since we have successfully compiled the package using Docker (`linux/arm64`), you can sync the compiled build outputs and scripts to your Pi:
+```bash
+./sync_to_pi.sh root hbot.local
+```
+
+Next, copy the systemd service file from your laptop to the Pi workspace:
+```bash
+scp hbot_web.service root@hbot.local:/root/hbot_ws/
+```
+
+### Step 2: SSH into the Pi
+```bash
+ssh root@hbot.local
+```
+
+### Step 3: Launch Driver & Web Dashboard in the Background
+
+> [!IMPORTANT]
+> The node requires `flask`, `flask-socketio`, `psutil`, and `eventlet` in the Python environment where it is run.
+> - **If running directly on the Raspberry Pi host (outside Docker)**, make sure to install them first:
+>   ```bash
+>   sudo apt update && sudo apt install -y python3-flask python3-flask-socketio python3-psutil python3-eventlet
+>   ```
+> - **If running inside a Docker container on the Pi**, make sure to rebuild the Docker image to include the dependencies we added to [Dockerfile](file:///home/huy/Documents/03.MyProjects/hbot_ws/docker/pi/Dockerfile):
+>   ```bash
+>   docker compose -f docker/pi/docker-compose.yaml build --no-cache
+>   ```
+
+Sourcing the workspace install and launching both `hbot_driver` and `hbot_web` in the background:
+
+#### Option A: Running as a systemd service (Recommended)
+A `hbot_web.service` configuration file has been created to handle automatic startup, logging, and restarts on the Pi:
+1. **Copy the service file** to the systemd folder:
+   ```bash
+   sudo cp /root/hbot_ws/hbot_web.service /etc/systemd/system/
+   ```
+2. **Reload systemd and enable the service** (to run automatically at boot):
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable hbot_web.service
+   ```
+3. **Start the service**:
+   ```bash
+   sudo systemctl start hbot_web.service
+   ```
+4. **Monitor logs live**:
+   ```bash
+   journalctl -u hbot_web.service -f
+   ```
+5. **Stop the service**:
+   ```bash
+   sudo systemctl stop hbot_web.service
+   ```
+
+#### Option B: Running via manual background script
+Alternatively, launch the script in the background:
+```bash
+nohup ./scripts/web_bringup.sh > log/web_bringup.log 2>&1 &
+```
+- To monitor logs live:
+  ```bash
+  tail -f log/web_bringup.log
+  ```
+- To stop the background nodes manually:
+  ```bash
+  pkill -f web_node
+  pkill -f hbot_driver
+  ```
+
+### Step 4: Access and Test the Dashboard
+1. Open a browser and navigate to `http://<pi_ip>` (e.g., `http://192.168.1.100` or `http://hbot.local`).
+2. **Teleoperation**: Drive the robot using WASD or touch-dragging the on-screen joystick. Observe the `/cmd_vel` output:
+   ```bash
+   ros2 topic echo /cmd_vel
+   ```
+3. **Telemetry**: Check if CPU/RAM/Disk stats are updated. Launch the robot driver (which publishes `/battery/voltage` and `/battery/percent`) and verify the battery widget.
+4. **WiFi Management**:
+   - Switch between **STA** and **AP** modes using the operation toggle.
+   - Scan for surrounding networks, click one, and enter the password to connect.
+   - Use the **Refresh** button under Saved Connections to view connections stored in NetworkManager, and test deleting/quick-reconnecting to them.
+
+---
+
+## 🛠️ Troubleshooting
+
+### `AttributeError: can't set attribute 'session'`
+If you see this traceback error in the terminal when the web interface connects, there is a package version mismatch (e.g. newer `Flask 3.x` from pip alongside older `Flask-SocketIO` from apt). 
+
+To resolve this conflict and restore web dashboard metrics:
+- **If running directly on the Raspberry Pi host (outside Docker)**, run:
+  ```bash
+  python3 -m pip install --upgrade flask flask-socketio
+  ```
+- **If running inside a Docker container on the Pi**, you can rebuild the container or run pip upgrade inside the container to ensure matching versions.
+

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>hbot Command Dashboard</title>
+  <!-- Google Fonts: Inter and Rajdhani -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <!-- FontAwesome for icons -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="stars"></div>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="dashboard-header glass-panel">
+      <div class="logo-section">
+        <div class="status-indicator online"></div>
+        <span class="logo-text">HBOT COMMAND STATION</span>
+      </div>
+      <div class="ip-section">
+        <i class="fa-solid fa-network-wired icon-cyan"></i>
+        <span id="ip-address">Loading IP...</span>
+      </div>
+      <div class="header-metrics">
+        <!-- Battery Widget -->
+        <div class="metric-badge battery-badge glass-inset" id="battery-widget">
+          <i class="fa-solid fa-battery-three-quarters text-green" id="battery-icon"></i>
+          <span class="metric-value" id="battery-percent">--%</span>
+          <span class="metric-sub" id="battery-volts">(-- V)</span>
+        </div>
+        <!-- WiFi Status Badge -->
+        <div class="metric-badge wifi-badge glass-inset" id="wifi-badge">
+          <i class="fa-solid fa-wifi" id="wifi-status-icon"></i>
+          <span class="metric-value" id="wifi-status-text">STA Mode</span>
+          <span class="metric-sub" id="wifi-status-ssid">Scanning...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Dashboard Grid -->
+    <main class="dashboard-grid">
+      <!-- Left Panel: Teleop Controls -->
+      <section class="control-panel glass-panel">
+        <h2 class="panel-title"><i class="fa-solid fa-gamepad icon-cyan"></i> TELEOPERATION</h2>
+        
+        <div class="joystick-wrapper">
+          <div class="joystick-container" id="joystick-zone">
+            <!-- Joystick Canvas will be drawn dynamically -->
+            <canvas id="joystick-canvas"></canvas>
+            <div class="joystick-instructions" id="joy-instruction">Touch/Drag to Drive</div>
+            <div class="joystick-values" id="joy-values" style="display: none; position: absolute; bottom: 12px; font-size: 0.8rem; font-family: monospace; color: var(--neon-cyan); letter-spacing: 0.5px; font-weight: 600;">L: 0.00 | A: 0.00</div>
+
+          </div>
+        </div>
+
+        <!-- Limits Controls -->
+        <div class="limits-container">
+          <div class="limit-slider-group">
+            <div class="slider-header">
+              <span>Linear Speed Max</span>
+              <span class="limit-val" id="linear-limit-val">0.3 m/s</span>
+            </div>
+            <input type="range" id="linear-limit" min="0.05" max="1.0" step="0.05" value="0.3" class="neon-slider">
+          </div>
+          <div class="limit-slider-group">
+            <div class="slider-header">
+              <span>Angular Speed Max</span>
+              <span class="limit-val" id="angular-limit-val">1.0 rad/s</span>
+            </div>
+            <input type="range" id="angular-limit" min="0.1" max="2.5" step="0.1" value="1.0" class="neon-slider">
+          </div>
+        </div>
+
+        <!-- Keyboard Teleop Info -->
+        <div class="keyboard-container">
+          <div class="keyboard-legend">Keyboard Controls: <span class="kbd-highlight">WASD</span> to drive, <span class="kbd-highlight">Space</span> to stop</div>
+          <div class="keyboard-keys">
+            <div class="key-row">
+              <div class="key" id="key-w">W</div>
+            </div>
+            <div class="key-row">
+              <div class="key" id="key-a">A</div>
+              <div class="key" id="key-s">S</div>
+              <div class="key" id="key-d">D</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Tabs System -->
+      <section class="stats-panel glass-panel">
+        <div class="tabs-header">
+          <button class="tab-btn active" data-tab="system-tab">
+            <i class="fa-solid fa-gauge-high"></i> System Monitor
+          </button>
+          <button class="tab-btn" data-tab="wifi-tab">
+            <i class="fa-solid fa-wifi-slash"></i> Wi-Fi Manager
+          </button>
+        </div>
+
+        <div class="tab-content active" id="system-tab">
+          <div class="system-grid">
+            <!-- CPU Progress Ring -->
+            <div class="stat-card glass-inset">
+              <span class="stat-label">CPU USAGE</span>
+              <div class="progress-ring-container">
+                <svg class="progress-ring" width="120" height="120">
+                  <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="8" fill="transparent" r="50" cx="60" cy="60" />
+                  <circle class="progress-ring__circle" id="cpu-ring" stroke="var(--neon-cyan)" stroke-dasharray="314.16 314.16" stroke-dashoffset="314.16" stroke-width="8" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" />
+                </svg>
+                <div class="progress-ring-text" id="cpu-text">0%</div>
+              </div>
+            </div>
+
+            <!-- RAM Progress Ring -->
+            <div class="stat-card glass-inset">
+              <span class="stat-label">RAM USAGE</span>
+              <div class="progress-ring-container">
+                <svg class="progress-ring" width="120" height="120">
+                  <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="8" fill="transparent" r="50" cx="60" cy="60" />
+                  <circle class="progress-ring__circle" id="ram-ring" stroke="var(--neon-blue)" stroke-dasharray="314.16 314.16" stroke-dashoffset="314.16" stroke-width="8" stroke-linecap="round" fill="transparent" r="50" cx="60" cy="60" />
+                </svg>
+                <div class="progress-ring-text" id="ram-text">0%</div>
+              </div>
+            </div>
+
+            <!-- Disk Usage -->
+            <div class="stat-card glass-inset full-width">
+              <div class="disk-header">
+                <span class="stat-label"><i class="fa-solid fa-hard-drive"></i> STORAGE USE</span>
+                <span id="disk-text">0%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar" id="disk-bar" style="width: 0%;"></div>
+              </div>
+            </div>
+
+            <!-- Network Speed Card -->
+            <div class="stat-card glass-inset full-width net-card">
+              <span class="stat-label"><i class="fa-solid fa-network-wired"></i> NETWORK THROUGHPUT</span>
+              <div class="net-speeds">
+                <div class="speed-item">
+                  <i class="fa-solid fa-arrow-down icon-cyan"></i>
+                  <div>
+                    <span class="speed-value" id="net-rx">0.0</span> <span class="speed-unit">KB/s</span>
+                    <div class="speed-lbl">Download</div>
+                  </div>
+                </div>
+                <div class="speed-item">
+                  <i class="fa-solid fa-arrow-up icon-blue"></i>
+                  <div>
+                    <span class="speed-value" id="net-tx">0.0</span> <span class="speed-unit">KB/s</span>
+                    <div class="speed-lbl">Upload</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-content" id="wifi-tab">
+          <!-- Wifi Mode Switcher -->
+          <div class="wifi-mode-panel glass-inset">
+            <span class="mode-title">Operation Mode</span>
+            <div class="mode-switch-wrapper">
+              <span class="mode-label" id="lbl-sta">STA (Client)</span>
+              <label class="switch">
+                <input type="checkbox" id="wifi-mode-toggle">
+                <span class="slider round"></span>
+              </label>
+              <span class="mode-label" id="lbl-ap">AP (Hotspot)</span>
+            </div>
+          </div>
+
+          <!-- STA Mode Content -->
+          <div id="wifi-sta-controls">
+            <!-- Scanned Networks Section -->
+            <div class="wifi-section-header">
+              <h3>Visible Networks</h3>
+              <button class="action-btn" id="btn-scan-wifi"><i class="fa-solid fa-rotate"></i> Scan</button>
+            </div>
+            <div class="wifi-list glass-inset" id="wifi-networks-list">
+              <div class="list-placeholder">Click Scan to search for networks...</div>
+            </div>
+
+            <!-- Saved Profiles Section -->
+            <div class="wifi-section-header margin-top">
+              <h3>Saved Connections</h3>
+              <button class="action-btn" id="btn-refresh-saved"><i class="fa-solid fa-clock-rotate-left"></i> Refresh</button>
+            </div>
+            <div class="wifi-list glass-inset" id="wifi-saved-list">
+              <div class="list-placeholder">Loading saved connections...</div>
+            </div>
+          </div>
+
+          <!-- AP Mode Content -->
+          <div id="wifi-ap-controls" style="display: none;">
+            <div class="ap-info-card glass-inset">
+              <i class="fa-solid fa-circle-exclamation ap-warning-icon"></i>
+              <h3>Access Point Active</h3>
+              <p>The robot is broadcasting its own Wi-Fi network. Connect your device using the credentials below:</p>
+              
+              <div class="ap-credential-row">
+                <span class="cred-label">SSID:</span>
+                <span class="cred-val" id="ap-ssid-val">hbot_ap_xxxx</span>
+              </div>
+              <div class="ap-credential-row">
+                <span class="cred-label">Password:</span>
+                <span class="cred-val">12345678</span>
+              </div>
+              <div class="ap-credential-row">
+                <span class="cred-label">Gateway IP:</span>
+                <span class="cred-val" id="ap-gateway-ip">10.42.0.1</span>
+              </div>
+              
+              <p class="ap-note">Note: To return to Client Mode, toggle the operation mode switch back to STA.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- WiFi Password Connection Dialog -->
+  <div class="modal" id="password-modal">
+    <div class="modal-content glass-panel">
+      <div class="modal-header">
+        <h3>Connect to Network</h3>
+        <button class="close-btn" id="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Enter the password for <strong id="modal-ssid-name">Network</strong></p>
+        <div class="input-group">
+          <i class="fa-solid fa-key input-icon"></i>
+          <input type="password" id="wifi-password-input" placeholder="Password" autofocus>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="cancel-btn" id="btn-cancel-connect">Cancel</button>
+        <button class="confirm-btn" id="btn-confirm-connect">Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- SocketIO Client library -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <!-- Custom JS -->
+  <script src="/static/js/main.js"></script>
+</body>
+</html>

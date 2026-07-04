@@ -2,7 +2,7 @@
 
 set -e
 
-workspace_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+workspace_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.."
 ros_prefix="/opt/ros/humble"
 
 export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-9}"
@@ -20,5 +20,9 @@ fi
 
 source "$workspace_dir/install/setup.bash"
 
-ros2 launch hbot_bringup hbot_bringup.launch.py "$@"
+# Ensure the log directory exists
+mkdir -p "$workspace_dir/log"
+
+echo "Starting hbot_driver and hbot_web..."
+ros2 launch hbot_bringup web_bringup.launch.py > "$workspace_dir/log/web_bringup.log" 2>&1
 

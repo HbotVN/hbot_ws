@@ -29,7 +29,7 @@ Neu da build toan workspace truoc do bang Conda Python, can xoa `build/`, `insta
 
 ## Localization Mode
 
-Localization can map YAML hop le. Hay thay `/absolute/path/to/map.yaml` bang map that cua ban.
+Localization can map YAML hop le. Hay thay `/absolute/path/to/map.yaml` bang map that cua ban (xem huong dan tao va save map tai [map_saving_guide.md](file:///home/huy/Documents/03.MyProjects/hbot_ws/docs/map_saving_guide.md)).
 
 ### Simulation + Localization
 

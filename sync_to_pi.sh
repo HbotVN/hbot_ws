@@ -29,6 +29,10 @@ ssh -o ConnectTimeout=5 "$PI_USER@$PI_HOST" "mkdir -p \"$PI_DEST\""
 echo "Syncing install_pi to remote install/ directory..."
 rsync -avz --delete --progress install_pi/ "$PI_USER@$PI_HOST:$PI_DEST/install/"
 
+echo "Syncing scripts to remote scripts/ directory..."
+rsync -avz --delete --progress scripts/ "$PI_USER@$PI_HOST:$PI_DEST/scripts/"
+
+
 echo "==========================================="
 echo "Sync completed successfully!"
 echo "To source this on your Pi, run:"
