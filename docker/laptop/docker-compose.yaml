@@ -7,6 +7,8 @@ services:
     container_name: hbot_simulation_container
     network_mode: "host"
     ipc: "host"
+    tty: true
+    stdin_open: true
     environment:
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
@@ -30,4 +32,5 @@ services:
     devices:
       # Hardware acceleration for GUI (Intel Integrated Graphics)
       - /dev/dri:/dev/dri
-    command: bash -c "./build_packages.sh && ./bringup.sh simulation_mode:=$$SIMULATION_MODE use_sim_time:=$$SIMULATION_MODE slam:=$$SLAM enable_navigation:=$$ENABLE_NAVIGATION run_rviz:=$$RUN_RVIZ"
+    
+        # command: bash -c "./build_packages.sh && ./scripts/bringup.sh simulation_mode:=$$SIMULATION_MODE use_sim_time:=$$SIMULATION_MODE slam:=$$SLAM enable_navigation:=$$ENABLE_NAVIGATION run_rviz:=$$RUN_RVIZ"

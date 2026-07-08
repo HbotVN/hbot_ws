@@ -4,13 +4,144 @@ import time
 import socket
 import threading
 import subprocess
+import sqlite3
+import signal
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from rclpy.qos import qos_profile_sensor_data
+from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
 from std_msgs.msg import Float32
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid
+from sensor_msgs.msg import LaserScan
 from rclpy.parameter import ParameterType
 from rcl_interfaces.msg import ParameterDescriptor
+
+# SQLite and Maps configuration
+MAPS_DIR = '/root/hbot_ws/map'
+if not os.path.exists(MAPS_DIR):
+    # Fallback to local user workspace for laptop development
+    MAPS_DIR = os.path.expanduser('~/Documents/03.MyProjects/hbot_ws/maps')
+os.makedirs(MAPS_DIR, exist_ok=True)
+DB_PATH = os.path.join(MAPS_DIR, 'hbot_maps.db')
+
+def init_db():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS maps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                yaml_path TEXT NOT NULL,
+                pgm_path TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active INTEGER DEFAULT 0
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+
+def save_map_to_db(name, yaml_path, pgm_path):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE maps SET is_active = 0")
+        cursor.execute(
+            "INSERT OR REPLACE INTO maps (name, yaml_path, pgm_path, is_active) VALUES (?, ?, ?, 1)",
+            (name, yaml_path, pgm_path)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Database error: {e}")
+        return False
+
+def get_all_maps():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, yaml_path, created_at, is_active FROM maps ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "name": r[1], "yaml_path": r[2], "created_at": r[3], "is_active": r[4]} for r in rows]
+    except Exception as e:
+        print(f"Database error: {e}")
+        return []
+
+def delete_map_from_db(map_id):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT yaml_path, pgm_path FROM maps WHERE id = ?", (map_id,))
+        row = cursor.fetchone()
+        if row:
+            yaml_path, pgm_path = row[0], row[1]
+            if os.path.exists(yaml_path):
+                try: os.remove(yaml_path)
+                except Exception: pass
+            if os.path.exists(pgm_path):
+                try: os.remove(pgm_path)
+                except Exception: pass
+            cursor.execute("DELETE FROM maps WHERE id = ?", (map_id,))
+            conn.commit()
+            conn.close()
+            return True
+        conn.close()
+        return False
+    except Exception as e:
+        print(f"Database error: {e}")
+        return False
+
+class ROSLaunchManager:
+    def __init__(self, node):
+        self.node = node
+        self.logger = node.get_logger()
+        self.active_process = None
+        self.current_mode = None  # 'mapping', 'navigation', or None
+        self.active_map = None
+
+    def stop_active_launch(self):
+        if self.active_process:
+            self.logger.info("Terminating active ROS 2 launch session...")
+            try:
+                os.killpg(os.getpgid(self.active_process.pid), signal.SIGINT)
+                self.active_process.wait(timeout=5)
+            except Exception as e:
+                self.logger.warn(f"SIGINT failed or timed out, forcing SIGKILL: {e}")
+                try:
+                    os.killpg(os.getpgid(self.active_process.pid), signal.SIGKILL)
+                    self.active_process.wait()
+                except Exception:
+                    pass
+            self.active_process = None
+            self.current_mode = None
+            self.active_map = None
+
+    def start_mapping_mode(self):
+        self.stop_active_launch()
+        self.logger.info("Starting SLAM Mapping mode...")
+        sim_time_str = "True" if self.node.use_sim_time else "False"
+        cmd = f"ros2 launch hbot_bringup hbot_bringup.launch.py slam:=True enable_navigation:=True use_sim_time:={sim_time_str}"
+        self.active_process = subprocess.Popen(
+            cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        self.current_mode = "mapping"
+        self.active_map = None
+
+    def start_navigation_mode(self, map_name, yaml_path):
+        self.stop_active_launch()
+        self.logger.info(f"Starting Navigation mode with map: {yaml_path}")
+        sim_time_str = "True" if self.node.use_sim_time else "False"
+        cmd = f"ros2 launch hbot_bringup hbot_bringup.launch.py slam:=False enable_navigation:=True map:='{yaml_path}' use_sim_time:={sim_time_str}"
+        self.active_process = subprocess.Popen(
+            cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        self.current_mode = "navigation"
+        self.active_map = map_name
+
 
 # Check and import Flask dependencies
 try:
@@ -76,6 +207,11 @@ class WebNode(Node):
             name='battery_percent_topic', value='battery/percent',
             descriptor=ParameterDescriptor(type=ParameterType.PARAMETER_STRING, description="Battery percentage topic")
         )
+        if not self.has_parameter('use_sim_time'):
+            self.declare_parameter(
+                name='use_sim_time', value=False,
+                descriptor=ParameterDescriptor(type=ParameterType.PARAMETER_BOOL, description="Whether to run in simulation time")
+            )
 
         # Get parameter values
         self.host = self.get_parameter('host').value
@@ -83,11 +219,13 @@ class WebNode(Node):
         self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
         self.battery_voltage_topic = self.get_parameter('battery_voltage_topic').value
         self.battery_percent_topic = self.get_parameter('battery_percent_topic').value
+        self.use_sim_time = self.get_parameter('use_sim_time').value
 
-        self.get_logger().info(f"Starting hbot_web_node on {self.host}:{self.port}")
+        self.get_logger().info(f"Starting hbot_web_node on {self.host}:{self.port} (sim_time: {self.use_sim_time})")
 
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
+        self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'initialpose', 10)
 
         # Subscribers
         self.battery_voltage = 0.0
@@ -95,6 +233,9 @@ class WebNode(Node):
         self.create_subscription(Float32, self.battery_voltage_topic, self.battery_voltage_callback, 10)
         self.create_subscription(Float32, self.battery_percent_topic, self.battery_percent_callback, 10)
         self.create_subscription(Odometry, 'odom', self.odom_callback, 10)
+        self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
+        self.create_subscription(LaserScan, 'scan', self.scan_callback, qos_profile_sensor_data)
+        self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', self.amcl_pose_callback, 10)
 
         # Timer for publishing system metrics (1Hz)
         self.create_timer(1.0, self.system_metrics_timer_callback)
@@ -114,6 +255,27 @@ class WebNode(Node):
                 self.last_bytes_recv = io_stats.bytes_recv
             except Exception:
                 pass
+
+        # E-Stop and Dynamic Launching
+        self.estop_active = False
+        self.estop_timer = self.create_timer(0.05, self.estop_timer_callback)
+        self.launch_manager = ROSLaunchManager(self)
+
+
+    def estop_timer_callback(self):
+        if self.estop_active:
+            twist = Twist()
+            twist.linear.x = 0.0
+            twist.linear.y = 0.0
+            twist.linear.z = 0.0
+            twist.angular.x = 0.0
+            twist.angular.y = 0.0
+            twist.angular.z = 0.0
+            self.cmd_vel_pub.publish(twist)
+
+    def destroy_node(self):
+        self.launch_manager.stop_active_launch()
+        super().destroy_node()
 
     def battery_voltage_callback(self, msg):
         self.battery_voltage = msg.data
@@ -153,6 +315,73 @@ class WebNode(Node):
             'y': round(y, 3),
             'yaw': round(yaw, 3)
         })
+
+    def map_callback(self, msg):
+        try:
+            origin = {
+                'x': msg.info.origin.position.x,
+                'y': msg.info.origin.position.y,
+                'qz': msg.info.origin.orientation.z,
+                'qw': msg.info.origin.orientation.w
+            }
+            map_info = {
+                'resolution': msg.info.resolution,
+                'width': msg.info.width,
+                'height': msg.info.height,
+                'origin': origin
+            }
+            map_data_list = list(msg.data)
+            
+            socketio.emit('map_status', {
+                'info': map_info,
+                'data': map_data_list
+            })
+        except Exception as e:
+            self.get_logger().error(f"Error in map_callback: {e}")
+
+    def scan_callback(self, msg):
+        try:
+            import math
+            ranges_list = []
+            for r in msg.ranges:
+                if math.isnan(r) or math.isinf(r):
+                    ranges_list.append(999.0)
+                else:
+                    ranges_list.append(round(r, 3))
+
+            scan_data = {
+                'angle_min': msg.angle_min,
+                'angle_max': msg.angle_max,
+                'angle_increment': msg.angle_increment,
+                'range_min': msg.range_min,
+                'range_max': msg.range_max,
+                'ranges': ranges_list
+            }
+            socketio.emit('scan_status', scan_data)
+        except Exception as e:
+            self.get_logger().error(f"Error in scan_callback: {e}")
+
+    def amcl_pose_callback(self, msg):
+        try:
+            import math
+            x = msg.pose.pose.position.x
+            y = msg.pose.pose.position.y
+            
+            qz = msg.pose.pose.orientation.z
+            qw = msg.pose.pose.orientation.w
+            yaw = 2.0 * math.atan2(qz, qw)
+            if yaw > math.pi:
+                yaw -= 2.0 * math.pi
+            elif yaw < -math.pi:
+                yaw += 2.0 * math.pi
+
+            socketio.emit('amcl_pose_status', {
+                'x': round(x, 3),
+                'y': round(y, 3),
+                'yaw': round(yaw, 3)
+            })
+        except Exception as e:
+            self.get_logger().error(f"Error in amcl_pose_callback: {e}")
 
     def detect_wifi_interface(self):
         """Find the wifi interface name using nmcli or default to wlan0"""
@@ -262,7 +491,7 @@ def index():
 
 @socketio.on('teleop_cmd')
 def handle_teleop_cmd(data):
-    if not ros_node:
+    if not ros_node or ros_node.estop_active:
         return
     try:
         linear_x = float(data.get('x', 0.0))
@@ -274,6 +503,167 @@ def handle_teleop_cmd(data):
         ros_node.cmd_vel_pub.publish(twist)
     except Exception as e:
         ros_node.get_logger().error(f"Error publishing Twist command: {e}")
+
+@socketio.on('initialpose_cmd')
+def handle_initialpose_cmd(data):
+    if not ros_node:
+        return
+    try:
+        x = float(data.get('x', 0.0))
+        y = float(data.get('y', 0.0))
+        yaw = float(data.get('yaw', 0.0))
+
+        import math
+        qz = math.sin(yaw / 2.0)
+        qw = math.cos(yaw / 2.0)
+
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = ros_node.get_clock().now().to_msg()
+
+        msg.pose.pose.position.x = x
+        msg.pose.pose.position.y = y
+        msg.pose.pose.position.z = 0.0
+        msg.pose.pose.orientation.x = 0.0
+        msg.pose.pose.orientation.y = 0.0
+        msg.pose.pose.orientation.z = qz
+        msg.pose.pose.orientation.w = qw
+
+        msg.pose.covariance = [
+            0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.068
+        ]
+
+        ros_node.initial_pose_pub.publish(msg)
+        ros_node.get_logger().info(f"Published Initial Pose from WebUI: x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}")
+    except Exception as e:
+        ros_node.get_logger().error(f"Error publishing Initial Pose: {e}")
+
+@socketio.on('estop_toggle')
+def handle_estop_toggle(data):
+    if not ros_node:
+        return
+    state = bool(data.get('active', False))
+    ros_node.estop_active = state
+    ros_node.get_logger().info(f"E-Stop toggle: {state}")
+    socketio.emit('estop_status', {'active': state})
+
+@socketio.on('switch_mode')
+def handle_switch_mode(data):
+    if not ros_node:
+        return
+    mode = data.get('mode')  # 'mapping', 'navigation', or 'idle'
+    map_id = data.get('map_id')  # required for 'navigation'
+    
+    if mode == 'mapping':
+        ros_node.launch_manager.start_mapping_mode()
+        emit('mode_status', {
+            'mode': 'mapping',
+            'active_map': None,
+            'message': 'Switched to Mapping Mode (SLAM Toolbox)'
+        }, broadcast=True)
+    elif mode == 'navigation':
+        if not map_id:
+            emit('mode_status', {'success': False, 'message': 'Map ID is required for navigation'})
+            return
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT name, yaml_path FROM maps WHERE id = ?", (map_id,))
+            row = cursor.fetchone()
+            cursor.execute("UPDATE maps SET is_active = 0")
+            cursor.execute("UPDATE maps SET is_active = 1 WHERE id = ?", (map_id,))
+            conn.commit()
+            conn.close()
+            
+            if row:
+                map_name, yaml_path = row[0], row[1]
+                ros_node.launch_manager.start_navigation_mode(map_name, yaml_path)
+                emit('mode_status', {
+                    'mode': 'navigation',
+                    'active_map': map_name,
+                    'message': f"Switched to Navigation Mode with map: {map_name}"
+                }, broadcast=True)
+            else:
+                emit('mode_status', {'success': False, 'message': 'Map ID not found in database'})
+        except Exception as e:
+            emit('mode_status', {'success': False, 'message': f"Database error: {e}"})
+    else:
+        ros_node.launch_manager.stop_active_launch()
+        emit('mode_status', {
+            'mode': 'idle',
+            'active_map': None,
+            'message': 'System idle (launches stopped)'
+        }, broadcast=True)
+
+@socketio.on('get_mode_status')
+def handle_get_mode_status():
+    if not ros_node:
+        return
+    emit('mode_status', {
+        'mode': ros_node.launch_manager.current_mode or 'idle',
+        'active_map': ros_node.launch_manager.active_map,
+        'estop_active': ros_node.estop_active
+    })
+
+@socketio.on('save_map')
+def handle_save_map(data):
+    if not ros_node:
+        return
+    map_name = data.get('name', '').strip()
+    if not map_name:
+        emit('save_map_response', {'success': False, 'message': 'Map name is required'})
+        return
+        
+    ros_node.get_logger().info(f"Saving map: {map_name} to {MAPS_DIR}...")
+    base_path = os.path.join(MAPS_DIR, map_name)
+    yaml_path = base_path + ".yaml"
+    pgm_path = base_path + ".pgm"
+    
+    cmd = f"ros2 run nav2_map_server map_saver_cli -f '{base_path}'"
+    
+    def run_map_saver():
+        ret, stdout, stderr = run_cmd(cmd, timeout=15)
+        if ret == 0 and os.path.exists(yaml_path):
+            db_success = save_map_to_db(map_name, yaml_path, pgm_path)
+            if db_success:
+                socketio.emit('save_map_response', {
+                    'success': True,
+                    'message': f"Map '{map_name}' saved and registered successfully!",
+                    'map_name': map_name
+                })
+                # Broadcast list update
+                maps = get_all_maps()
+                socketio.emit('maps_list', maps)
+            else:
+                socketio.emit('save_map_response', {'success': False, 'message': 'Map saved, but failed to write to database'})
+        else:
+            ros_node.get_logger().error(f"Map saver failed: {stderr or stdout}")
+            socketio.emit('save_map_response', {'success': False, 'message': f"Map saver failed: {stderr or stdout}"})
+            
+    threading.Thread(target=run_map_saver, daemon=True).start()
+
+@socketio.on('list_maps')
+def handle_list_maps():
+    maps = get_all_maps()
+    emit('maps_list', maps)
+
+@socketio.on('delete_map')
+def handle_delete_map(data):
+    map_id = data.get('id')
+    if not map_id:
+        return
+    success = delete_map_from_db(map_id)
+    if success:
+        emit('delete_map_response', {'success': True, 'message': 'Map deleted successfully'})
+        maps = get_all_maps()
+        socketio.emit('maps_list', maps)
+    else:
+        emit('delete_map_response', {'success': False, 'message': 'Failed to delete map'})
 
 @socketio.on('wifi_scan')
 def handle_wifi_scan():
@@ -480,6 +870,7 @@ def handle_wifi_set_mode(data):
 
 def main(args=None):
     global ros_node
+    init_db()
     rclpy.init(args=args)
     ros_node = WebNode()
 

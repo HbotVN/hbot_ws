@@ -58,6 +58,7 @@ let joystickActive = false;
 let joystickVector = { x: 0, y: 0 }; // Values normalized -1 to 1
 let teleopTimer = null;
 let currentSelectedSsid = '';
+let currentWorkflowMode = 'idle'; // 'mapping', 'navigation', or 'idle'
 
 // Update Slider values dynamically
 linearLimitSlider.addEventListener('input', (e) => {
@@ -84,6 +85,10 @@ tabBtns.forEach(btn => {
       // Trigger updates when opening Wifi tab
       socket.emit('wifi_saved_connections');
       triggerWifiScan();
+    } else if (tabId === 'map-tab') {
+      // Trigger updates when opening Map tab
+      socket.emit('list_maps');
+      socket.emit('get_mode_status');
     }
   });
 });
@@ -153,25 +158,11 @@ socket.on('odom_status', (data) => {
 socket.on('system_status', (data) => {
   ipAddrEl.innerText = data.ip;
   
-  // Update CPU, RAM & Disk Progress Bars
-  const cpuBar = document.getElementById('cpu-bar');
-  const cpuText = document.getElementById('cpu-text');
-  if (cpuBar) cpuBar.style.width = `${data.cpu}%`;
-  if (cpuText) cpuText.innerText = `${data.cpu.toFixed(0)}%`;
-
-  const ramBar = document.getElementById('ram-bar');
-  const ramText = document.getElementById('ram-text');
-  if (ramBar) ramBar.style.width = `${data.ram}%`;
-  if (ramText) ramText.innerText = `${data.ram.toFixed(0)}%`;
-  
-  const diskBar = document.getElementById('disk-bar');
-  const diskText = document.getElementById('disk-text');
-  if (diskBar) diskBar.style.width = `${data.disk}%`;
-  if (diskText) diskText.innerText = `${data.disk.toFixed(0)}%`;
-  
-  // Update Network throughput rates
-  document.getElementById('net-rx').innerText = data.rx_speed.toFixed(1);
-  document.getElementById('net-tx').innerText = data.tx_speed.toFixed(1);
+  // Update Header CPU & RAM status badges
+  const cpuEl = document.getElementById('system-cpu-percent');
+  const ramEl = document.getElementById('system-ram-percent');
+  if (cpuEl) cpuEl.innerText = `${data.cpu.toFixed(0)}%`;
+  if (ramEl) ramEl.innerText = `RAM: ${data.ram.toFixed(0)}%`;
   
   // Update Network badges
   if (data.wifi_mode === 'ap') {
@@ -204,26 +195,6 @@ socket.on('system_status', (data) => {
     wifiApControls.style.display = 'none';
   }
 });
-
-function updateProgressRing(ringId, textId, percent) {
-  const circle = document.getElementById(ringId);
-  const text = document.getElementById(textId);
-  const radius = circle.r.baseVal.value;
-  const circumference = radius * 2 * Math.PI;
-  
-  const offset = circumference - (percent / 100) * circumference;
-  circle.style.strokeDashoffset = offset;
-  text.innerText = `${percent.toFixed(0)}%`;
-  
-  // Color code based on levels
-  if (percent > 85) {
-    circle.style.stroke = 'var(--neon-red)';
-  } else if (percent > 65) {
-    circle.style.stroke = 'var(--neon-orange)';
-  } else {
-    circle.style.stroke = ringId === 'cpu-ring' ? 'var(--neon-cyan)' : 'var(--neon-blue)';
-  }
-}
 
 // --- WiFi Actions & NMCLI Control ---
 
@@ -416,7 +387,7 @@ let width = zone.clientWidth;
 let height = zone.clientHeight;
 let centerX = width / 2;
 let centerY = height / 2;
-const maxRadius = 80; // Distance joystick knob can travel
+const maxRadius = 40; // Distance joystick knob can travel
 let knobX = centerX;
 let knobY = centerY;
 
@@ -478,17 +449,17 @@ function drawJoystick() {
 
   // 4. Draw joystick knob
   ctx.beginPath();
-  ctx.arc(knobX, knobY, 30, 0, Math.PI * 2);
+  ctx.arc(knobX, knobY, 15, 0, Math.PI * 2);
   
   // Create gradient fill for knob
-  const grad = ctx.createRadialGradient(knobX - 5, knobY - 5, 2, knobX, knobY, 30);
+  const grad = ctx.createRadialGradient(knobX - 3, knobY - 3, 1, knobX, knobY, 15);
   grad.addColorStop(0, '#ffffff');
   grad.addColorStop(0.2, '#00f2fe');
   grad.addColorStop(1, '#4facfe');
   
   ctx.fillStyle = grad;
   ctx.shadowColor = '#00f2fe';
-  ctx.shadowBlur = joystickActive ? 15 : 5;
+  ctx.shadowBlur = joystickActive ? 10 : 4;
   ctx.fill();
   
   // Reset shadow for subsequent drawings
@@ -681,6 +652,7 @@ function sendTeleopCommandThrottled(linear, angular) {
 }
 
 function sendTeleopCommand(linear, angular) {
+  if (isEstopActive) return; // Ignore driving when E-Stop is active
   socket.emit('teleop_cmd', {
     x: parseFloat(linear.toFixed(3)),
     z: parseFloat(angular.toFixed(3))
@@ -715,8 +687,6 @@ function teleopTick() {
   sendTeleopCommand(linear, angular);
 }
 
-
-
 function startTeleopLoop() {
   if (teleopTimer === null) {
     teleopTimer = setInterval(teleopTick, 100); // Send command every 100ms
@@ -729,3 +699,505 @@ function stopTeleopLoop() {
     teleopTimer = null;
   }
 }
+
+// ==========================================
+// --- ROS 2 Websocket & Interactive Map ---
+// ==========================================
+
+// Connect to rosbridge_suite websocket server
+// Map Viewport Variables
+const mapCanvas = document.getElementById('map-canvas');
+const mapCtx = mapCanvas.getContext('2d');
+
+let mapMeta = null;
+let mapData = null;
+let laserScanData = null;
+let robotPose = { x: 0.0, y: 0.0, yaw: 0.0 };
+
+// Pose estimation states
+let poseEstimateMode = false;
+let dragStart = null;
+let dragEnd = null;
+
+// Subscribe to ROS topics via backend Socket.IO events
+socket.on('map_status', (message) => {
+  mapMeta = message.info;
+  mapData = message.data;
+  drawMap();
+});
+
+socket.on('scan_status', (message) => {
+  laserScanData = message;
+  drawMap();
+});
+
+socket.on('amcl_pose_status', (message) => {
+  const poseXEl = document.getElementById('pose-x');
+  const poseYEl = document.getElementById('pose-y');
+  const poseYawEl = document.getElementById('pose-yaw');
+
+  const x = message.x;
+  const y = message.y;
+  const yaw = message.yaw;
+
+  if (currentWorkflowMode === 'navigation') {
+    robotPose.x = x;
+    robotPose.y = y;
+    robotPose.yaw = yaw;
+
+    if (poseXEl) poseXEl.innerText = `${x.toFixed(2)} m`;
+    if (poseYEl) poseYEl.innerText = `${y.toFixed(2)} m`;
+    if (poseYawEl) poseYawEl.innerText = `${yaw.toFixed(2)} rad`;
+
+    drawMap();
+  }
+});
+
+// Update robot pose coordinates and trigger redraw
+socket.on('odom_status', (data) => {
+  // Update standard text labels in Robot Status tab
+  const odomVxEl = document.getElementById('odom-vx');
+  const odomWzEl = document.getElementById('odom-wz');
+  const poseXEl = document.getElementById('pose-x');
+  const poseYEl = document.getElementById('pose-y');
+  const poseYawEl = document.getElementById('pose-yaw');
+
+  if (odomVxEl) odomVxEl.innerText = data.vx.toFixed(2);
+  if (odomWzEl) odomWzEl.innerText = data.wz.toFixed(2);
+
+  // In navigation mode, we use localization pose (/amcl_pose) instead of odom pose.
+  // In mapping or idle mode, we fallback to odom pose.
+  if (currentWorkflowMode !== 'navigation') {
+    robotPose.x = data.x;
+    robotPose.y = data.y;
+    robotPose.yaw = data.yaw;
+
+    if (poseXEl) poseXEl.innerText = `${data.x.toFixed(2)} m`;
+    if (poseYEl) poseYEl.innerText = `${data.y.toFixed(2)} m`;
+    if (poseYawEl) poseYawEl.innerText = `${data.yaw.toFixed(2)} rad`;
+
+    drawMap();
+  }
+});
+
+// Resize canvas to fit responsive map area wrapper
+function resizeMapCanvas() {
+  const wrapper = mapCanvas.parentElement;
+  if (!wrapper) return;
+  mapCanvas.width = wrapper.clientWidth;
+  mapCanvas.height = wrapper.clientHeight;
+  drawMap();
+}
+
+window.addEventListener('resize', resizeMapCanvas);
+setTimeout(resizeMapCanvas, 300);
+
+// Occupancy Grid Map Drawing Loop
+function drawMap() {
+  if (!mapMeta || !mapData) {
+    // Renders placeholder background when ROS is disconnected
+    mapCtx.fillStyle = '#101520';
+    mapCtx.fillRect(0, 0, mapCanvas.width, mapCanvas.height);
+    mapCtx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    mapCtx.font = '14px var(--font-title)';
+    mapCtx.textAlign = 'center';
+    mapCtx.fillText('Waiting for occupancy grid map data (/map)...', mapCanvas.width / 2, mapCanvas.height / 2);
+    return;
+  }
+
+  // Clear Canvas
+  mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+
+  const mapW = mapMeta.width;
+  const mapH = mapMeta.height;
+  
+  // Fit map centering inside canvas bounding rect
+  const scale = Math.min(mapCanvas.width / mapW, mapCanvas.height / mapH);
+  const offsetX = (mapCanvas.width - mapW * scale) / 2;
+  const offsetY = (mapCanvas.height - mapH * scale) / 2;
+
+  // Offscreen rendering logic to draw grid cells
+  const imgData = mapCtx.createImageData(mapW, mapH);
+  for (let y = 0; y < mapH; y++) {
+    for (let x = 0; x < mapW; x++) {
+      // ROS maps start from bottom-left; canvas image starts top-left (invert Y)
+      const rosIndex = (mapH - 1 - y) * mapW + x;
+      const val = mapData[rosIndex];
+      const imgIndex = (y * mapW + x) * 4;
+      
+      if (val === 0) {
+        // Free Area (White)
+        imgData.data[imgIndex] = 255;     // R
+        imgData.data[imgIndex + 1] = 255; // G
+        imgData.data[imgIndex + 2] = 255; // B
+        imgData.data[imgIndex + 3] = 255; // A
+      } else if (val === 100) {
+        // Obstacle (Black)
+        imgData.data[imgIndex] = 0;       // R
+        imgData.data[imgIndex + 1] = 0;   // G
+        imgData.data[imgIndex + 2] = 0;   // B
+        imgData.data[imgIndex + 3] = 255; // A
+      } else {
+        // Unknown (-1) (Grey)
+        imgData.data[imgIndex] = 127;     // R
+        imgData.data[imgIndex + 1] = 127; // G
+        imgData.data[imgIndex + 2] = 127; // B
+        imgData.data[imgIndex + 3] = 255; // A
+      }
+    }
+  }
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = mapW;
+  offscreen.height = mapH;
+  offscreen.getContext('2d').putImageData(imgData, 0, 0);
+
+  mapCtx.drawImage(offscreen, offsetX, offsetY, mapW * scale, mapH * scale);
+
+  // Conversion helper: ROS coordinates (meters) to canvas coordinates (pixels)
+  function worldToPixel(wx, wy) {
+    const rx = (wx - mapMeta.origin.x) / mapMeta.resolution;
+    const ry = (wy - mapMeta.origin.y) / mapMeta.resolution;
+    const px = offsetX + rx * scale;
+    const py = offsetY + (mapH - ry) * scale;
+    return { x: px, y: py };
+  }
+
+  // Draw 2D LaserScan overlay
+  if (laserScanData && laserScanData.ranges) {
+    mapCtx.fillStyle = '#ff007f'; // Neon pink scan points
+    const angleMin = laserScanData.angle_min;
+    const angleIncrement = laserScanData.angle_increment;
+    
+    for (let i = 0; i < laserScanData.ranges.length; i++) {
+      const r = laserScanData.ranges[i];
+      if (r < laserScanData.range_min || r > laserScanData.range_max || isNaN(r)) continue;
+      
+      const angle = robotPose.yaw + 3.14 + angleMin + i * angleIncrement;
+      const wx = robotPose.x + r * Math.cos(angle);
+      const wy = robotPose.y + r * Math.sin(angle);
+      
+      const pixel = worldToPixel(wx, wy);
+      mapCtx.beginPath();
+      mapCtx.arc(pixel.x, pixel.y, 2.5, 0, Math.PI * 2);
+      mapCtx.fill();
+    }
+  }
+
+  // Draw Robot Icon on Map Frame
+  const rPixel = worldToPixel(robotPose.x, robotPose.y);
+  
+  mapCtx.save();
+  mapCtx.translate(rPixel.x, rPixel.y);
+  mapCtx.rotate(-robotPose.yaw + Math.PI / 2); // Flip direction to align with bottom-up Y coordinate
+
+  mapCtx.beginPath();
+  mapCtx.moveTo(0, -10); // Nose tip
+  mapCtx.lineTo(-7, 7);  // Left wing
+  mapCtx.lineTo(0, 3);   // Back indentation
+  mapCtx.lineTo(7, 7);   // Right wing
+  mapCtx.closePath();
+
+  mapCtx.fillStyle = '#00f2fe';
+  mapCtx.strokeStyle = '#000000';
+  mapCtx.lineWidth = 2.0;
+  mapCtx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  mapCtx.shadowBlur = 4;
+  mapCtx.fill();
+  mapCtx.stroke();
+
+  mapCtx.restore();
+
+  // Draw dragging 2D Pose Estimation arrow overlay
+  if (poseEstimateMode && dragStart && dragEnd) {
+    mapCtx.beginPath();
+    mapCtx.moveTo(dragStart.x, dragStart.y);
+    mapCtx.lineTo(dragEnd.x, dragEnd.y);
+    mapCtx.strokeStyle = '#39ff14'; // Neon Green arrow
+    mapCtx.lineWidth = 3;
+    mapCtx.stroke();
+
+    const angle = Math.atan2(dragEnd.y - dragStart.y, dragEnd.x - dragStart.x);
+    mapCtx.beginPath();
+    mapCtx.moveTo(dragEnd.x, dragEnd.y);
+    mapCtx.lineTo(dragEnd.x - 12 * Math.cos(angle - Math.PI / 6), dragEnd.y - 12 * Math.sin(angle - Math.PI / 6));
+    mapCtx.lineTo(dragEnd.x - 12 * Math.cos(angle + Math.PI / 6), dragEnd.y - 12 * Math.sin(angle + Math.PI / 6));
+    mapCtx.closePath();
+    mapCtx.fillStyle = '#39ff14';
+    mapCtx.fill();
+  }
+}
+
+// 2D Pose Estimator click and drag listener bindings
+const btnPoseEstimate = document.getElementById('btn-pose-estimate');
+
+btnPoseEstimate.addEventListener('click', () => {
+  poseEstimateMode = !poseEstimateMode;
+  if (poseEstimateMode) {
+    btnPoseEstimate.classList.add('tool-active');
+    showToast("Pose Estimate mode activated. Click and drag an orientation arrow on the map.", "info");
+  } else {
+    btnPoseEstimate.classList.remove('tool-active');
+    dragStart = null;
+    dragEnd = null;
+  }
+});
+
+mapCanvas.addEventListener('mousedown', (e) => {
+  if (!poseEstimateMode) return;
+  const rect = mapCanvas.getBoundingClientRect();
+  dragStart = {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
+});
+
+mapCanvas.addEventListener('mousemove', (e) => {
+  if (!poseEstimateMode || !dragStart) return;
+  const rect = mapCanvas.getBoundingClientRect();
+  dragEnd = {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
+  };
+  drawMap();
+});
+
+mapCanvas.addEventListener('mouseup', () => {
+  if (!poseEstimateMode || !dragStart || !dragEnd) return;
+
+  const dx = dragEnd.x - dragStart.x;
+  const dy = dragEnd.y - dragStart.y;
+  
+  // Handle simple click orientations (yaw = 0)
+  if (Math.sqrt(dx * dx + dy * dy) < 5) {
+    dragEnd.x = dragStart.x + 10;
+    dragEnd.y = dragStart.y;
+  }
+
+  // Translate canvas pixel to image pixels
+  const mapW = mapMeta.width;
+  const mapH = mapMeta.height;
+  const scale = Math.min(mapCanvas.width / mapW, mapCanvas.height / mapH);
+  const offsetX = (mapCanvas.width - mapW * scale) / 2;
+  const offsetY = (mapCanvas.height - mapH * scale) / 2;
+
+  const imgX = (dragStart.x - offsetX) / scale;
+  const imgY = mapH - (dragStart.y - offsetY) / scale; // Invert Canvas Y coordinates
+
+  // Convert image pixel to world coordinates
+  const worldX = mapMeta.origin.x + imgX * mapMeta.resolution;
+  const worldY = mapMeta.origin.y + imgY * mapMeta.resolution;
+
+  // Heading calculation
+  const rosDx = dragEnd.x - dragStart.x;
+  const rosDy = -(dragEnd.y - dragStart.y);
+  const yaw = Math.atan2(rosDy, rosDx);
+
+  // Publish to /initialpose
+  publishInitialPose(worldX, worldY, yaw);
+
+  // Reset
+  poseEstimateMode = false;
+  btnPoseEstimate.classList.remove('tool-active');
+  dragStart = null;
+  dragEnd = null;
+  drawMap();
+});
+
+function publishInitialPose(x, y, yaw) {
+  socket.emit('initialpose_cmd', { x: x, y: y, yaw: yaw });
+  showToast(`Published Initial Pose: x=${x.toFixed(2)}, y=${y.toFixed(2)}, yaw=${yaw.toFixed(2)}`, "success");
+}
+
+// ==========================================
+// --- Safety E-Stop & Map Tab Handlers ---
+// ==========================================
+
+let isEstopActive = false;
+const btnEstop = document.getElementById('btn-estop');
+
+btnEstop.addEventListener('click', () => {
+  isEstopActive = !isEstopActive;
+  socket.emit('estop_toggle', { active: isEstopActive });
+  
+  if (isEstopActive) {
+    btnEstop.classList.add('estop-active');
+    btnEstop.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> STOPPED';
+    document.getElementById('map-workspace').classList.add('estop-frame-active');
+    showToast("EMERGENCY STOP ENGAGED! Motors locked.", "error");
+    
+    // Snaps joystick knob back to center to lock input visually
+    knobX = centerX;
+    knobY = centerY;
+    drawJoystick();
+  } else {
+    btnEstop.classList.remove('estop-active');
+    btnEstop.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> E-STOP';
+    document.getElementById('map-workspace').classList.remove('estop-frame-active');
+    showToast("Emergency Stop released.", "success");
+  }
+});
+
+// Sync E-Stop broadcasts from server
+socket.on('estop_status', (data) => {
+  isEstopActive = data.active;
+  if (isEstopActive) {
+    btnEstop.classList.add('estop-active');
+    btnEstop.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> STOPPED';
+    document.getElementById('map-workspace').classList.add('estop-frame-active');
+  } else {
+    btnEstop.classList.remove('estop-active');
+    btnEstop.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> E-STOP';
+    document.getElementById('map-workspace').classList.remove('estop-frame-active');
+  }
+});
+
+// Map Workflow switching triggers
+document.getElementById('btn-mode-mapping').addEventListener('click', () => {
+  socket.emit('switch_mode', { mode: 'mapping' });
+});
+
+document.getElementById('btn-mode-nav').addEventListener('click', () => {
+  const mapId = getActiveSelectedMapId();
+  if (!mapId) {
+    showToast("Please select a map from the list catalog first.", "error");
+    return;
+  }
+  socket.emit('switch_mode', { mode: 'navigation', map_id: mapId });
+});
+
+document.getElementById('btn-mode-idle').addEventListener('click', () => {
+  socket.emit('switch_mode', { mode: 'idle' });
+});
+
+// Active workflow mode changes broadcasted from server
+socket.on('mode_status', (data) => {
+  currentWorkflowMode = data.mode || 'idle';
+  const modeBadge = document.getElementById('current-workflow-mode');
+  const activeMapLabel = document.getElementById('current-active-map');
+  const saveMapSection = document.getElementById('save-map-section');
+  
+  if (modeBadge) {
+    modeBadge.className = 'status-badge';
+    if (data.mode === 'mapping') {
+      modeBadge.innerText = 'MAPPING';
+      modeBadge.classList.add('mapping');
+      if (saveMapSection) saveMapSection.style.display = 'block';
+    } else if (data.mode === 'navigation') {
+      modeBadge.innerText = 'NAVIGATION';
+      modeBadge.classList.add('navigation');
+      if (saveMapSection) saveMapSection.style.display = 'none';
+    } else {
+      modeBadge.innerText = 'IDLE';
+      if (saveMapSection) saveMapSection.style.display = 'none';
+    }
+  }
+
+  if (activeMapLabel) {
+    activeMapLabel.innerText = data.active_map ? `Map: ${data.active_map}` : 'No Map Loaded';
+  }
+
+  if (data.message) {
+    showToast(data.message, 'info');
+  }
+});
+
+// Maps catalog management rendering
+const savedMapsList = document.getElementById('saved-maps-list');
+const btnRefreshMaps = document.getElementById('btn-refresh-maps');
+let selectedMapId = null;
+
+function getActiveSelectedMapId() {
+  return selectedMapId;
+}
+
+btnRefreshMaps.addEventListener('click', () => {
+  socket.emit('list_maps');
+});
+
+socket.on('maps_list', (maps) => {
+  savedMapsList.innerHTML = '';
+  if (maps.length === 0) {
+    savedMapsList.innerHTML = '<div class="list-placeholder">No saved maps found. Go map!</div>';
+    return;
+  }
+  
+  maps.forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'saved-network-item glass-inset';
+    if (m.is_active) {
+      selectedMapId = m.id;
+    }
+    
+    // Style highlighting active selected map
+    item.style.padding = '8px 10px';
+    item.style.marginBottom = '6px';
+    item.style.display = 'flex';
+    item.style.justifyContent = 'space-between';
+    item.style.alignItems = 'center';
+    item.style.cursor = 'pointer';
+    if (selectedMapId === m.id) {
+      item.style.borderColor = 'var(--neon-cyan)';
+    }
+
+    item.innerHTML = `
+      <div class="map-item-info" style="display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-map" style="color: ${selectedMapId === m.id ? 'var(--neon-cyan)' : 'var(--text-secondary)'};"></i>
+        <span class="map-item-name" style="font-weight: 500; font-size: 0.9rem;">${m.name}</span>
+      </div>
+      <div class="map-item-actions" style="display: flex; gap: 4px;">
+        <button class="action-btn btn-delete-map" data-id="${m.id}" style="padding: 4px 8px; background: rgba(255,0,85,0.1); border-color: rgba(255,0,85,0.2);"><i class="fa-solid fa-trash"></i></button>
+      </div>
+    `;
+
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-delete-map')) return;
+      selectedMapId = m.id;
+      // Re-render highlights
+      document.querySelectorAll('#saved-maps-list .saved-network-item').forEach(el => {
+        el.style.borderColor = 'rgba(255, 255, 255, 0.03)';
+        el.querySelector('i').style.color = 'var(--text-secondary)';
+      });
+      item.style.borderColor = 'var(--neon-cyan)';
+      item.querySelector('i').style.color = 'var(--neon-cyan)';
+      showToast(`Selected map: ${m.name}`, "info");
+    });
+
+    item.querySelector('.btn-delete-map').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete map file and catalog entry for "${m.name}"?`)) {
+        socket.emit('delete_map', { id: m.id });
+        showToast(`Deleting map: ${m.name}...`, "info");
+      }
+    });
+
+    savedMapsList.appendChild(item);
+  });
+});
+
+// Save map triggers
+const btnSaveMapExecute = document.getElementById('btn-save-map-execute');
+const mapSaveNameInput = document.getElementById('map-save-name-input');
+
+btnSaveMapExecute.addEventListener('click', () => {
+  const mapName = mapSaveNameInput.value.trim();
+  if (!mapName) {
+    showToast("Please enter a valid map name", "error");
+    return;
+  }
+  socket.emit('save_map', { name: mapName });
+  showToast(`Saving map as: ${mapName}...`, "info");
+  mapSaveNameInput.value = '';
+});
+
+socket.on('save_map_response', (data) => {
+  if (data.success) {
+    showToast(data.message, "success");
+  } else {
+    showToast(data.message, "error");
+  }
+});
+
+// Initial load triggers
+socket.emit('list_maps');
+socket.emit('get_mode_status');

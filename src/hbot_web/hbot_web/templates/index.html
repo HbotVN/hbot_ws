@@ -25,6 +25,12 @@
         <span id="ip-address">Loading IP...</span>
       </div>
       <div class="header-metrics">
+        <!-- System metrics badge -->
+        <div class="metric-badge system-badge glass-inset" id="system-badge">
+          <i class="fa-solid fa-microchip icon-cyan"></i>
+          <span class="metric-value" id="system-cpu-percent">0%</span>
+          <span class="metric-sub" id="system-ram-percent">RAM: 0%</span>
+        </div>
         <!-- Battery Widget -->
         <div class="metric-badge battery-badge glass-inset" id="battery-widget">
           <i class="fa-solid fa-battery-three-quarters text-green" id="battery-icon"></i>
@@ -42,46 +48,62 @@
 
     <!-- Main Dashboard Grid -->
     <main class="dashboard-grid">
-      <!-- Left Panel: Teleop Controls -->
-      <section class="control-panel glass-panel">
-        <h2 class="panel-title"><i class="fa-solid fa-gamepad icon-cyan"></i> TELEOPERATION</h2>
-        
-        <div class="joystick-wrapper">
-          <div class="joystick-container" id="joystick-zone">
-            <!-- Joystick Canvas will be drawn dynamically -->
-            <canvas id="joystick-canvas"></canvas>
-            <div class="joystick-instructions" id="joy-instruction">Touch/Drag to Drive</div>
-            <div class="joystick-values" id="joy-values" style="display: none; position: absolute; bottom: 12px; font-size: 0.8rem; font-family: monospace; color: var(--neon-cyan); letter-spacing: 0.5px; font-weight: 600;">L: 0.00 | A: 0.00</div>
-
+      <!-- Left Panel: Map Workspace with Overlaid Teleop -->
+      <section class="map-panel glass-panel" id="map-workspace">
+        <!-- Floating Header Toolbar -->
+        <div class="map-header-toolbar">
+          <div class="mode-info">
+            <span class="status-label-text">MODE:</span>
+            <span class="status-badge" id="current-workflow-mode">IDLE</span>
+            <span class="map-name-label" id="current-active-map">No Map Loaded</span>
+          </div>
+          <div class="map-tools">
+            <button class="tool-btn" id="btn-pose-estimate" title="2D Pose Estimate">
+              <i class="fa-solid fa-location-crosshairs"></i> Pose Estimate
+            </button>
           </div>
         </div>
 
-        <!-- Limits Controls -->
-        <div class="limits-container">
-          <div class="limit-slider-group">
-            <div class="slider-header">
-              <span>Linear Speed Max</span>
-              <span class="limit-val" id="linear-limit-val">0.3 m/s</span>
-            </div>
-            <input type="range" id="linear-limit" min="0.05" max="1.0" step="0.05" value="0.3" class="neon-slider">
-          </div>
-          <div class="limit-slider-group">
-            <div class="slider-header">
-              <span>Angular Speed Max</span>
-              <span class="limit-val" id="angular-limit-val">1.0 rad/s</span>
-            </div>
-            <input type="range" id="angular-limit" min="0.1" max="2.5" step="0.1" value="1.0" class="neon-slider">
-          </div>
-        </div>
+        <!-- Interactive Map Canvas Viewport -->
+        <div class="map-viewport-wrapper">
+          <canvas id="map-canvas"></canvas>
+          
+          <!-- E-Stop Overlay -->
+          <button class="estop-btn" id="btn-estop">
+            <i class="fa-solid fa-circle-exclamation"></i> E-STOP
+          </button>
 
-        <!-- Keyboard Teleop Info -->
-        <div class="keyboard-container">
-          <div class="keyboard-legend">Keyboard Controls: <span class="kbd-highlight">WASD</span> to drive, <span class="kbd-highlight">Space</span> to stop</div>
-          <div class="keyboard-keys">
-            <div class="key-row">
+          <!-- Floating Overlaid Teleop Controller -->
+          <div class="teleop-overlay glass-inset">
+            <div class="joystick-wrapper-compact">
+              <div class="joystick-container-compact" id="joystick-zone">
+                <canvas id="joystick-canvas"></canvas>
+                <div class="joystick-instructions" id="joy-instruction">DRIVE</div>
+                <div class="joystick-values" id="joy-values" style="display: none; position: absolute; bottom: 8px; font-size: 0.7rem; font-family: monospace; color: var(--neon-cyan); font-weight: 600;">L: 0.0 | A: 0.0</div>
+              </div>
+            </div>
+
+            <!-- Limits Controls -->
+            <div class="limits-container-compact">
+              <div class="limit-slider-group">
+                <div class="slider-header-compact">
+                  <span>Linear</span>
+                  <span class="limit-val" id="linear-limit-val">0.3m/s</span>
+                </div>
+                <input type="range" id="linear-limit" min="0.05" max="1.0" step="0.05" value="0.3" class="neon-slider">
+              </div>
+              <div class="limit-slider-group">
+                <div class="slider-header-compact">
+                  <span>Angular</span>
+                  <span class="limit-val" id="angular-limit-val">1.0r/s</span>
+                </div>
+                <input type="range" id="angular-limit" min="0.1" max="2.5" step="0.1" value="1.0" class="neon-slider">
+              </div>
+            </div>
+
+            <!-- Keyboard Guide (Mini - Kept for main.js element reference) -->
+            <div class="keyboard-keys-mini" style="display: none;">
               <div class="key" id="key-w">W</div>
-            </div>
-            <div class="key-row">
               <div class="key" id="key-a">A</div>
               <div class="key" id="key-s">S</div>
               <div class="key" id="key-d">D</div>
@@ -94,13 +116,13 @@
       <section class="stats-panel glass-panel">
         <div class="tabs-header">
           <button class="tab-btn active" data-tab="robot-tab">
-            <i class="fa-solid fa-robot"></i> Robot Status
+            <i class="fa-solid fa-robot"></i> Robot
           </button>
-          <button class="tab-btn" data-tab="system-tab">
-            <i class="fa-solid fa-microchip"></i> Pi Status
+          <button class="tab-btn" data-tab="map-tab">
+            <i class="fa-solid fa-map"></i> Maps
           </button>
           <button class="tab-btn" data-tab="wifi-tab">
-            <i class="fa-solid fa-wifi"></i> Wi-Fi Manager
+            <i class="fa-solid fa-wifi"></i> Wi-Fi
           </button>
         </div>
 
@@ -126,7 +148,7 @@
 
             <!-- Pose Card -->
             <div class="stat-card glass-inset">
-              <span class="stat-label"><i class="fa-solid fa-location-crosshairs"></i> ODOMETRY POSE</span>
+              <span class="stat-label"><i class="fa-solid fa-location-crosshairs"></i> LOCALIZATION POSE</span>
               <div class="pose-grid">
                 <div class="pose-item">
                   <span class="pose-lbl">X position</span>
@@ -145,59 +167,41 @@
           </div>
         </div>
 
-        <!-- Tab 2: System Monitor (Pi Stats) -->
-        <div class="tab-content" id="system-tab">
-          <div class="system-grid-compact">
-            <!-- Host System Health Card -->
-            <div class="stat-card glass-inset compact-card">
-              <span class="stat-label"><i class="fa-solid fa-circle-info"></i> SYSTEM METRICS</span>
-              <div class="metrics-stack">
-                <!-- CPU -->
-                <div class="mini-metric-item">
-                  <div class="mini-metric-header">
-                    <span class="mini-lbl">CPU</span>
-                    <span class="mini-val" id="cpu-text">0%</span>
-                  </div>
-                  <div class="mini-bar-bg">
-                    <div class="mini-bar color-cyan" id="cpu-bar" style="width: 0%;"></div>
-                  </div>
-                </div>
-                <!-- RAM -->
-                <div class="mini-metric-item">
-                  <div class="mini-metric-header">
-                    <span class="mini-lbl">RAM</span>
-                    <span class="mini-val" id="ram-text">0%</span>
-                  </div>
-                  <div class="mini-bar-bg">
-                    <div class="mini-bar color-blue" id="ram-bar" style="width: 0%;"></div>
-                  </div>
-                </div>
-                <!-- Storage -->
-                <div class="mini-metric-item">
-                  <div class="mini-metric-header">
-                    <span class="mini-lbl">Storage</span>
-                    <span class="mini-val" id="disk-text">0%</span>
-                  </div>
-                  <div class="mini-bar-bg">
-                    <div class="mini-bar color-green" id="disk-bar" style="width: 0%;"></div>
-                  </div>
-                </div>
-              </div>
+        <!-- Tab 2: Map Manager -->
+        <div class="tab-content" id="map-tab">
+          <!-- Mode Selector Panel -->
+          <div class="map-mode-panel glass-inset" style="padding: 12px 15px; margin-bottom: 12px;">
+            <span class="mode-title">Operation Workflow</span>
+            <div class="mode-buttons-group" style="display: flex; gap: 8px; margin-top: 8px;">
+              <button class="action-btn" id="btn-mode-mapping" style="flex: 1; justify-content: center; padding: 8px 0;">
+                <i class="fa-solid fa-map-marked-alt icon-green"></i> Mapping
+              </button>
+              <button class="action-btn" id="btn-mode-nav" style="flex: 1; justify-content: center; padding: 8px 0;">
+                <i class="fa-solid fa-route icon-cyan"></i> Navigation
+              </button>
+              <button class="action-btn" id="btn-mode-idle" style="flex: 1; justify-content: center; padding: 8px 0;">
+                <i class="fa-solid fa-power-off icon-red"></i> Stop
+              </button>
             </div>
+          </div>
 
-            <!-- Network Speed Card -->
-            <div class="stat-card glass-inset compact-card">
-              <span class="stat-label"><i class="fa-solid fa-arrow-right-arrow-left"></i> NETWORK THROUGHPUT</span>
-              <div class="net-speeds-compact">
-                <div class="net-speed-row">
-                  <span><i class="fa-solid fa-arrow-down icon-cyan"></i> Down:</span>
-                  <span class="net-val"><span id="net-rx">0.0</span> KB/s</span>
-                </div>
-                <div class="net-speed-row">
-                  <span><i class="fa-solid fa-arrow-up icon-blue"></i> Up:</span>
-                  <span class="net-val"><span id="net-tx">0.0</span> KB/s</span>
-                </div>
-              </div>
+          <!-- Save Map Form -->
+          <div class="map-save-panel glass-inset" id="save-map-section" style="display: none; padding: 12px 15px; margin-bottom: 12px;">
+            <span class="mode-title">Save Map Session</span>
+            <div class="input-group" style="margin-top: 8px; display: flex; gap: 8px;">
+              <input type="text" id="map-save-name-input" placeholder="Map filename (e.g. lobby)" style="flex: 1; background: rgba(2, 6, 23, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 6px 10px; color: var(--text-primary); outline: none;">
+              <button class="action-btn" id="btn-save-map-execute"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+            </div>
+          </div>
+
+          <!-- Saved Maps List -->
+          <div class="wifi-scanning-container">
+            <div class="wifi-section-header">
+              <h3>Saved Maps</h3>
+              <button class="action-btn" id="btn-refresh-maps"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+            <div class="wifi-list glass-inset" id="saved-maps-list" style="max-height: 250px; overflow-y: auto;">
+              <div class="list-placeholder">Loading maps list...</div>
             </div>
           </div>
         </div>
@@ -288,6 +292,7 @@
 
   <!-- SocketIO Client library -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
   <!-- Custom JS -->
   <script src="/static/js/main.js"></script>
 </body>

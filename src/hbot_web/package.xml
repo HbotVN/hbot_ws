@@ -12,9 +12,7 @@
   <depend>std_msgs</depend>
   <depend>nav_msgs</depend>
   <exec_depend>python3-flask</exec_depend>
-  <exec_depend>python3-flask-socketio</exec_depend>
   <exec_depend>python3-psutil</exec_depend>
-  <exec_depend>python3-eventlet</exec_depend>
 
 
 

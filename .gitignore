@@ -4,3 +4,5 @@ log*/
 *deb
 .vscode/
 .*
+**/__pycache__/
+maps/
