@@ -19,3 +19,6 @@
 [submodule "src/hbot_simulation"]
 	path = src/hbot_simulation
 	url = git@github.com:HbotVN/hbot_simulation.git
+[submodule "src/robot_localization"]
+	path = src/robot_localization
+	url = https://github.com/cra-ros-pkg/robot_localization.git

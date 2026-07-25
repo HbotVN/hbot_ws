@@ -24,5 +24,5 @@ source "$workspace_dir/install/setup.bash"
 mkdir -p "$workspace_dir/log"
 
 echo "Starting hbot_driver and hbot_web..."
-ros2 launch hbot_bringup web_bringup.launch.py > "$workspace_dir/log/web_bringup.log" 2>&1
+ros2 launch hbot_bringup base_bringup.launch.py > "$workspace_dir/log/web_bringup.log" 2>&1
 

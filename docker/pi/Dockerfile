@@ -10,6 +10,14 @@ RUN apt-get update && apt-get install -y \
     python3-flask-socketio \
     python3-psutil \
     python3-eventlet \
+    ros-humble-rosidl-default-generators \
+    ros-humble-rosidl-default-runtime \
+    ros-humble-rosidl-typesupport-c \
+    ros-humble-rosidl-typesupport-cpp \
+    ros-humble-geographic-msgs \
+    ros-humble-diagnostics-updaters \
+    libgeographic-dev \
+    ros-humble-angles \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -20,6 +28,6 @@ RUN rm -rf src/hbot_simulation && \
     apt-get update && \
     rosdep update && \
     rosdep install --from-paths src --ignore-src -y --rosdistro humble \
-        --skip-keys "rviz2 rviz_common rviz_default_plugins rviz_ogre_vendor rviz_rendering nav2_rviz_plugins" && \
+    --skip-keys "rviz2 rviz_common rviz_default_plugins rviz_ogre_vendor rviz_rendering nav2_rviz_plugins" && \
     rm -rf src && \
     rm -rf /var/lib/apt/lists/*

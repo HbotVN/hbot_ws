@@ -13,4 +13,6 @@ services:
       - ../../build_pi:/root/hbot_ws/build_pi
       - ../../install_pi:/root/hbot_ws/install_pi
       - ../../log_pi:/root/hbot_ws/log_pi
-    command: bash -c "./build_packages_pi.sh"
+    # command: bash -c "./build_packages_pi.sh"
+    tty: true # Keeps the pseudo-TTY open
+    stdin_open: true # Keeps standard input open
