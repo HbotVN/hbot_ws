@@ -16,6 +16,12 @@ from sensor_msgs.msg import LaserScan
 from rclpy.parameter import ParameterType
 from rcl_interfaces.msg import ParameterDescriptor
 
+try:
+    import tf2_ros
+    HAS_TF2 = True
+except ImportError:
+    HAS_TF2 = False
+
 # SQLite and Maps configuration
 MAPS_DIR = '/root/hbot_ws/map'
 if not os.path.exists(MAPS_DIR):
@@ -124,7 +130,7 @@ class ROSLaunchManager:
         self.stop_active_launch()
         self.logger.info("Starting SLAM Mapping mode...")
         sim_time_str = "True" if self.node.use_sim_time else "False"
-        cmd = f"ros2 launch hbot_bringup hbot_bringup.launch.py slam:=True enable_navigation:=True use_sim_time:={sim_time_str}"
+        cmd = f"ros2 launch hbot_bringup hbot_bringup.launch.py slam:=True enable_navigation:=False use_sim_time:={sim_time_str}"
         self.active_process = subprocess.Popen(
             cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
@@ -237,6 +243,13 @@ class WebNode(Node):
         self.create_subscription(LaserScan, 'scan', self.scan_callback, qos_profile_sensor_data)
         self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', self.amcl_pose_callback, 10)
 
+        # TF Buffer & Listener for map frame robot pose and laser pose lookup
+        self.scan_frame_id = 'laser'
+        if HAS_TF2:
+            self.tf_buffer = tf2_ros.Buffer()
+            self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+            self.create_timer(0.1, self.tf_timer_callback)
+
         # Timer for publishing system metrics (1Hz)
         self.create_timer(1.0, self.system_metrics_timer_callback)
 
@@ -342,6 +355,8 @@ class WebNode(Node):
     def scan_callback(self, msg):
         try:
             import math
+            if hasattr(msg.header, 'frame_id') and msg.header.frame_id:
+                self.scan_frame_id = msg.header.frame_id
             ranges_list = []
             for r in msg.ranges:
                 if math.isnan(r) or math.isinf(r):
@@ -360,6 +375,77 @@ class WebNode(Node):
             socketio.emit('scan_status', scan_data)
         except Exception as e:
             self.get_logger().error(f"Error in scan_callback: {e}")
+
+    def tf_timer_callback(self):
+        if not HAS_TF2:
+            return
+
+        import math
+        # Look up robot pose in 'map' frame first, falling back to 'odom'
+        robot_pose = None
+        used_frame = None
+
+        for frame in ['map', 'odom']:
+            try:
+                t_base = self.tf_buffer.lookup_transform(frame, 'base_footprint', rclpy.time.Time())
+                bx = t_base.transform.translation.x
+                by = t_base.transform.translation.y
+                bqx = t_base.transform.rotation.x
+                bqy = t_base.transform.rotation.y
+                bqz = t_base.transform.rotation.z
+                bqw = t_base.transform.rotation.w
+
+                byaw = math.atan2(2.0 * (bqw * bqz + bqx * bqy), 1.0 - 2.0 * (bqy * bqy + bqz * bqz))
+                if byaw > math.pi:
+                    byaw -= 2.0 * math.pi
+                elif byaw < -math.pi:
+                    byaw += 2.0 * math.pi
+
+                robot_pose = {'x': round(bx, 3), 'y': round(by, 3), 'yaw': round(byaw, 3)}
+                used_frame = frame
+                break
+            except Exception:
+                continue
+
+        if robot_pose is None:
+            return
+
+        # Look up laser pose in the same frame
+        laser_pose = None
+        target_laser_frame = getattr(self, 'scan_frame_id', 'laser') or 'laser'
+        for lf in [target_laser_frame, 'laser', 'base_scan']:
+            try:
+                t_laser = self.tf_buffer.lookup_transform(used_frame, lf, rclpy.time.Time())
+                lx = t_laser.transform.translation.x
+                ly = t_laser.transform.translation.y
+                lqx = t_laser.transform.rotation.x
+                lqy = t_laser.transform.rotation.y
+                lqz = t_laser.transform.rotation.z
+                lqw = t_laser.transform.rotation.w
+
+                lyaw = math.atan2(2.0 * (lqw * lqz + lqx * lqy), 1.0 - 2.0 * (lqy * lqy + lqz * lqz))
+                if lyaw > math.pi:
+                    lyaw -= 2.0 * math.pi
+                elif lyaw < -math.pi:
+                    lyaw += 2.0 * math.pi
+
+                laser_pose = {'x': round(lx, 3), 'y': round(ly, 3), 'yaw': round(lyaw, 3)}
+                break
+            except Exception:
+                continue
+
+        payload = {
+            'x': robot_pose['x'],
+            'y': robot_pose['y'],
+            'yaw': robot_pose['yaw'],
+            'frame': used_frame
+        }
+        if laser_pose is not None:
+            payload['laser_x'] = laser_pose['x']
+            payload['laser_y'] = laser_pose['y']
+            payload['laser_yaw'] = laser_pose['yaw']
+
+        socketio.emit('map_pose_status', payload)
 
     def amcl_pose_callback(self, msg):
         try:

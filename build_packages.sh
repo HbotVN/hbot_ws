@@ -33,9 +33,9 @@ echo "Number of args: $#"
 echo "Building package(s): $args_str"
 
 if [ $# -eq 0 ]; then
-	colcon build --symlink-install --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
+	colcon build --symlink-install --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DCMAKE_BUILD_TYPE=Release
 else
-	colcon build --symlink-install --packages-select "$@" --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
+	colcon build --symlink-install --packages-select "$@" --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DCMAKE_BUILD_TYPE=Release
 fi
 
 

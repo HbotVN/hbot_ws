@@ -15,9 +15,14 @@ RUN apt-get update && apt-get install -y \
     ros-humble-rosidl-typesupport-c \
     ros-humble-rosidl-typesupport-cpp \
     ros-humble-geographic-msgs \
-    ros-humble-diagnostics-updaters \
+    ros-humble-diagnostic-updater \
     libgeographic-dev \
     ros-humble-angles \
+    libboost-system-dev \
+    build-essential \
+    ros-humble-cartographer \
+    ros-humble-cartographer-ros \
+    ros-humble-hls-lfcd-lds-driver \
     && rm -rf /var/lib/apt/lists/*
 
 

@@ -713,6 +713,8 @@ let mapMeta = null;
 let mapData = null;
 let laserScanData = null;
 let robotPose = { x: 0.0, y: 0.0, yaw: 0.0 };
+let laserPose = { x: 0.08, y: 0.0, yaw: Math.PI };
+let hasTfPose = false;
 
 // Pose estimation states
 let poseEstimateMode = false;
@@ -731,7 +733,38 @@ socket.on('scan_status', (message) => {
   drawMap();
 });
 
+// Accurate TF pose received from backend (map frame -> robot & laser)
+socket.on('map_pose_status', (message) => {
+  hasTfPose = true;
+  robotPose.x = message.x;
+  robotPose.y = message.y;
+  robotPose.yaw = message.yaw;
+
+  if (message.laser_x !== undefined) {
+    laserPose.x = message.laser_x;
+    laserPose.y = message.laser_y;
+    laserPose.yaw = message.laser_yaw;
+  } else {
+    // Fallback: 0.08m forward offset + 180deg (PI) rotation for laser frame relative to robot base
+    laserPose.x = message.x + 0.08 * Math.cos(message.yaw);
+    laserPose.y = message.y + 0.08 * Math.sin(message.yaw);
+    laserPose.yaw = message.yaw + Math.PI;
+  }
+
+  const poseXEl = document.getElementById('pose-x');
+  const poseYEl = document.getElementById('pose-y');
+  const poseYawEl = document.getElementById('pose-yaw');
+
+  if (poseXEl) poseXEl.innerText = `${message.x.toFixed(2)} m`;
+  if (poseYEl) poseYEl.innerText = `${message.y.toFixed(2)} m`;
+  if (poseYawEl) poseYawEl.innerText = `${message.yaw.toFixed(2)} rad`;
+
+  drawMap();
+});
+
 socket.on('amcl_pose_status', (message) => {
+  if (hasTfPose) return;
+
   const poseXEl = document.getElementById('pose-x');
   const poseYEl = document.getElementById('pose-y');
   const poseYawEl = document.getElementById('pose-yaw');
@@ -744,6 +777,10 @@ socket.on('amcl_pose_status', (message) => {
     robotPose.x = x;
     robotPose.y = y;
     robotPose.yaw = yaw;
+
+    laserPose.x = x + 0.08 * Math.cos(yaw);
+    laserPose.y = y + 0.08 * Math.sin(yaw);
+    laserPose.yaw = yaw + Math.PI;
 
     if (poseXEl) poseXEl.innerText = `${x.toFixed(2)} m`;
     if (poseYEl) poseYEl.innerText = `${y.toFixed(2)} m`;
@@ -758,19 +795,23 @@ socket.on('odom_status', (data) => {
   // Update standard text labels in Robot Status tab
   const odomVxEl = document.getElementById('odom-vx');
   const odomWzEl = document.getElementById('odom-wz');
-  const poseXEl = document.getElementById('pose-x');
-  const poseYEl = document.getElementById('pose-y');
-  const poseYawEl = document.getElementById('pose-yaw');
 
   if (odomVxEl) odomVxEl.innerText = data.vx.toFixed(2);
   if (odomWzEl) odomWzEl.innerText = data.wz.toFixed(2);
 
-  // In navigation mode, we use localization pose (/amcl_pose) instead of odom pose.
-  // In mapping or idle mode, we fallback to odom pose.
-  if (currentWorkflowMode !== 'navigation') {
+  // Fallback to odom pose only if TF map pose is not available yet
+  if (!hasTfPose && currentWorkflowMode !== 'navigation') {
+    const poseXEl = document.getElementById('pose-x');
+    const poseYEl = document.getElementById('pose-y');
+    const poseYawEl = document.getElementById('pose-yaw');
+
     robotPose.x = data.x;
     robotPose.y = data.y;
     robotPose.yaw = data.yaw;
+
+    laserPose.x = data.x + 0.08 * Math.cos(data.yaw);
+    laserPose.y = data.y + 0.08 * Math.sin(data.yaw);
+    laserPose.yaw = data.yaw + Math.PI;
 
     if (poseXEl) poseXEl.innerText = `${data.x.toFixed(2)} m`;
     if (poseYEl) poseYEl.innerText = `${data.y.toFixed(2)} m`;
@@ -871,11 +912,11 @@ function drawMap() {
     
     for (let i = 0; i < laserScanData.ranges.length; i++) {
       const r = laserScanData.ranges[i];
-      if (r < laserScanData.range_min || r > laserScanData.range_max || isNaN(r)) continue;
+      if (r < laserScanData.range_min || r > laserScanData.range_max || isNaN(r) || r >= 998.0) continue;
       
-      const angle = robotPose.yaw + 3.14 + angleMin + i * angleIncrement;
-      const wx = robotPose.x + r * Math.cos(angle);
-      const wy = robotPose.y + r * Math.sin(angle);
+      const angle = laserPose.yaw + angleMin + i * angleIncrement;
+      const wx = laserPose.x + r * Math.cos(angle);
+      const wy = laserPose.y + r * Math.sin(angle);
       
       const pixel = worldToPixel(wx, wy);
       mapCtx.beginPath();

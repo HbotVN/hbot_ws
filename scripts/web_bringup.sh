@@ -13,11 +13,19 @@ export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:+$CMAKE_PREFIX_PATH:}$ros_prefix"
 
 python_version="$(/usr/bin/python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 ros_python_path="$ros_prefix/lib/python${python_version}/site-packages"
+ros_python_local_path="$ros_prefix/local/lib/python${python_version}/dist-packages"
 
 if [ -d "$ros_python_path" ]; then
 	export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$ros_python_path"
 fi
 
+if [ -d "$ros_python_local_path" ]; then
+	export PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$ros_python_local_path"
+fi
+
+if [ -f "$ros_prefix/setup.bash" ]; then
+	source "$ros_prefix/setup.bash"
+fi
 source "$workspace_dir/install/setup.bash"
 
 # Ensure the log directory exists
