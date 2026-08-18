@@ -37,7 +37,7 @@ Under the `src/` directory, the following ROS 2 packages are configured as submo
 * **Role**: The central orchestration package.
 * **Key Files**:
   * [hbot_bringup.launch.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_bringup/launch/hbot_bringup.launch.py): The main entry launch file handling arguments for simulation/real hardware, mapping, navigation, and localization.
-  * `config/`: Contains YAML parameters for navigation (`nav2_params.yaml`), SLAM (`slam_params.yaml`), and the serial driver (`yahboom_driver_params.yaml`).
+  * `config/`: Contains YAML parameters for navigation (`nav2_params.yaml`), SLAM (`slam_params.yaml`), and the serial driver (`yahboom_driver_params.yaml`). `nav2_params.yaml`'s `controller_server` uses the Regulated Pure Pursuit controller (`nav2_regulated_pure_pursuit_controller`) with a rectangular robot footprint (not `robot_radius`) and a tight inflation radius, tuned to fit through ~10cm-clearance corridors — see [walkthrough.md](walkthrough.md#2026-08-19-nav2-local-controller-swapped-to-rpp--narrow-corridor-costmap-tuning) for details.
 
 ### 2. [hbot_description](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_description)
 * **Role**: Defines the mechanical and physical properties of the robot.

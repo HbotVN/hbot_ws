@@ -181,3 +181,44 @@ To resolve this conflict and restore web dashboard metrics:
   ```
 - **If running inside a Docker container on the Pi**, you can rebuild the container or run pip upgrade inside the container to ensure matching versions.
 
+---
+
+## 2026-08-19: Nav2 local controller swapped to RPP + narrow-corridor costmap tuning
+
+Changed [`src/hbot_bringup/config/nav2_params.yaml`](../src/hbot_bringup/config/nav2_params.yaml):
+
+- **Robot footprint corrected**: `local_costmap`/`global_costmap` previously used a leftover
+  TurtleBot3-Waffle `robot_radius: 0.22` circle. HBOT's real footprint comes from
+  `base_length: 0.17` (`hbot_description`) and `wheel_track: 0.2` +
+  `wheel_width: 0.025` (`yahboom_driver_params.yaml`), giving a ~0.17m x 0.225m
+  rectangle. Replaced `robot_radius` with an explicit rectangular
+  `footprint: "[[0.09, 0.12], [0.09, -0.12], [-0.09, -0.12], [-0.09, 0.12]]"`
+  (padded slightly to 0.18m x 0.24m, `footprint_padding: 0.01`) on both costmaps —
+  inscribed radius 0.09m, circumscribed radius 0.15m. A circular footprint can't
+  fit through gaps the actual (narrower) rectangle would clear when
+  traveling straight through them.
+- **`controller_server.FollowPath`**: replaced `dwb_core::DWBLocalPlanner` with
+  `nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController` (RPP),
+  with lookahead distances (0.25-0.5m) and speed (`desired_linear_vel: 0.2`)
+  scaled down for this robot's small footprint, and regulated/cost-based
+  velocity scaling enabled so it slows down instead of clipping walls in tight
+  corridors.
+- **`inflation_layer`** (both costmaps): `cost_scaling_factor` raised
+  3.0 -> 8.0 and `inflation_radius` reduced 0.55 -> 0.12, so a corridor with
+  only ~0.10m clearance on each side of the robot doesn't get inflated into a
+  blanket high-cost/no-go zone. `FollowPath.inflation_cost_scaling_factor` is
+  kept in sync (8.0) with the costmap's `cost_scaling_factor`.
+
+**Not changed / flagged for follow-up**: `hbot_description`'s
+`hbot.urdf.xacro` still computes `wheel_separation` as
+`base_width (0.14) + 2 * wheel_ygap (0.015) = 0.17m`, which no longer matches
+the driver's actual `wheel_track: 0.2`. This only affects simulated
+odometry/footprint visuals (Gazebo diff-drive plugin + RViz), not the real
+robot (the driver already uses 0.2m for real odometry) — left untouched
+pending confirmation this should be updated too.
+
+**Not yet validated**: no sim/hardware run performed against these values;
+per `PHASE0_RUNBOOK.md` baseline acceptance, this should be exercised with
+`slam:=True enable_navigation:=True` and a real narrow-corridor test before
+being considered final.
+
