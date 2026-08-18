@@ -64,6 +64,12 @@ Under the `src/` directory, the following ROS 2 packages are configured as submo
 ### 6. [navigation2](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/navigation2) & [slam_toolbox](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/slam_toolbox)
 * **Role**: Standard localization, mapping, and path planning components customized or referenced for this robot.
 
+### 7. [hbot_web](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web) *(not a submodule — lives directly in this repo)*
+* **Role**: Flask-SocketIO web dashboard for teleop, telemetry, map/localization, navigation goal-setting, and WiFi AP/STA management.
+* **Key Files**:
+  * [web_node.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/web_node.py): Publishes `cmd_vel` (teleop), `initialpose` (2D pose estimate), and `goal_pose` (Nav2 `NavigateToPose` goal via `bt_navigator`'s topic interface); subscribes to odometry/battery/scan/map/`amcl_pose`/`plan` (Nav2's global path) and relays them to the browser over SocketIO; shells out to `nmcli` for WiFi management.
+  * [index.html](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/templates/index.html) / [main.js](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/static/js/main.js): Canvas-based map viewport with click-and-drag tools for both 2D Pose Estimate and Set Goal (mutually exclusive), and a live overlay of the Nav2 global path plan while navigating.
+
 ---
 
 ## 🤖 Robot Specifications (Mechanical & Kinematics)

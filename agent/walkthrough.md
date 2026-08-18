@@ -181,3 +181,24 @@ To resolve this conflict and restore web dashboard metrics:
   ```
 - **If running inside a Docker container on the Pi**, you can rebuild the container or run pip upgrade inside the container to ensure matching versions.
 
+---
+
+# Walkthrough: Navigation Goal Input & Path Plan Overlay (hbot_web)
+
+Added a "Set Goal" map tool to the dashboard, mirroring the existing "Pose Estimate" tool, plus a live overlay of Nav2's computed global path.
+
+## Backend Changes
+- [web_node.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/web_node.py):
+  - Added a `goal_pose_pub` publisher on `goal_pose` (`geometry_msgs/PoseStamped`) — this is the topic Nav2's `bt_navigator` subscribes to for one-shot `NavigateToPose` goals (the same interface RViz2's "Nav2 Goal" tool uses).
+  - Added a subscription to `plan` (`nav_msgs/Path`), Nav2's global planner output, forwarded to the browser as `plan_status` (`{points: [{x, y}, ...]}`).
+  - Added the `goal_pose_cmd` SocketIO handler (`x`, `y`, `yaw` in the `map` frame), symmetric to the existing `initialpose_cmd` handler.
+  - `switch_mode` now emits an empty `plan_status` first, so a stale path from a previous navigation session doesn't linger after switching to mapping/idle.
+
+## Frontend Changes
+- [index.html](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/templates/index.html): Added a "Set Goal" button (`#btn-nav-goal`) next to "Pose Estimate" in the map toolbar, reusing the existing `.tool-btn`/`.tool-active` styles.
+- [main.js](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/static/js/main.js):
+  - Generalized the click-and-drag arrow interaction (previously only for 2D Pose Estimate) so it drives either `initialpose_cmd` or `goal_pose_cmd` depending on which tool is active (`poseEstimateMode` vs. `goalSetMode`, mutually exclusive, arrow color green vs. orange).
+  - "Set Goal" is only enabled while `currentWorkflowMode === 'navigation'`.
+  - `drawMap()` now renders the live `plan_status` points as an orange polyline over the occupancy grid, so the planned path to the goal is visible as the robot moves.
+  - Path overlay and any in-progress goal drag are cleared automatically when the workflow mode leaves `navigation`.
+

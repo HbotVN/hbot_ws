@@ -716,10 +716,18 @@ let robotPose = { x: 0.0, y: 0.0, yaw: 0.0 };
 let laserPose = { x: 0.08, y: 0.0, yaw: Math.PI };
 let hasTfPose = false;
 
-// Pose estimation states
+// Pose estimation / nav goal states
 let poseEstimateMode = false;
+let goalSetMode = false;
 let dragStart = null;
 let dragEnd = null;
+let planPoints = []; // Current global path plan overlay [{x, y}, ...] in world coords
+
+// Receive planned path (nav2 global plan) updates
+socket.on('plan_status', (message) => {
+  planPoints = (message && message.points) ? message.points : [];
+  drawMap();
+});
 
 // Subscribe to ROS topics via backend Socket.IO events
 socket.on('map_status', (message) => {
@@ -925,6 +933,25 @@ function drawMap() {
     }
   }
 
+  // Draw Nav2 global path plan overlay
+  if (planPoints && planPoints.length > 1) {
+    mapCtx.beginPath();
+    planPoints.forEach((p, i) => {
+      const pixel = worldToPixel(p.x, p.y);
+      if (i === 0) {
+        mapCtx.moveTo(pixel.x, pixel.y);
+      } else {
+        mapCtx.lineTo(pixel.x, pixel.y);
+      }
+    });
+    mapCtx.strokeStyle = '#f59e0b'; // Neon orange path line
+    mapCtx.lineWidth = 3;
+    mapCtx.shadowColor = 'rgba(245, 158, 11, 0.6)';
+    mapCtx.shadowBlur = 4;
+    mapCtx.stroke();
+    mapCtx.shadowBlur = 0;
+  }
+
   // Draw Robot Icon on Map Frame
   const rPixel = worldToPixel(robotPose.x, robotPose.y);
   
@@ -949,12 +976,13 @@ function drawMap() {
 
   mapCtx.restore();
 
-  // Draw dragging 2D Pose Estimation arrow overlay
-  if (poseEstimateMode && dragStart && dragEnd) {
+  // Draw dragging orientation arrow overlay (2D Pose Estimate or Nav Goal)
+  if ((poseEstimateMode || goalSetMode) && dragStart && dragEnd) {
+    const arrowColor = goalSetMode ? '#f59e0b' : '#39ff14'; // Orange for goal, Green for pose estimate
     mapCtx.beginPath();
     mapCtx.moveTo(dragStart.x, dragStart.y);
     mapCtx.lineTo(dragEnd.x, dragEnd.y);
-    mapCtx.strokeStyle = '#39ff14'; // Neon Green arrow
+    mapCtx.strokeStyle = arrowColor;
     mapCtx.lineWidth = 3;
     mapCtx.stroke();
 
@@ -964,17 +992,20 @@ function drawMap() {
     mapCtx.lineTo(dragEnd.x - 12 * Math.cos(angle - Math.PI / 6), dragEnd.y - 12 * Math.sin(angle - Math.PI / 6));
     mapCtx.lineTo(dragEnd.x - 12 * Math.cos(angle + Math.PI / 6), dragEnd.y - 12 * Math.sin(angle + Math.PI / 6));
     mapCtx.closePath();
-    mapCtx.fillStyle = '#39ff14';
+    mapCtx.fillStyle = arrowColor;
     mapCtx.fill();
   }
 }
 
-// 2D Pose Estimator click and drag listener bindings
+// 2D Pose Estimator / Nav Goal click and drag listener bindings
 const btnPoseEstimate = document.getElementById('btn-pose-estimate');
+const btnNavGoal = document.getElementById('btn-nav-goal');
 
 btnPoseEstimate.addEventListener('click', () => {
   poseEstimateMode = !poseEstimateMode;
   if (poseEstimateMode) {
+    goalSetMode = false;
+    btnNavGoal.classList.remove('tool-active');
     btnPoseEstimate.classList.add('tool-active');
     showToast("Pose Estimate mode activated. Click and drag an orientation arrow on the map.", "info");
   } else {
@@ -984,8 +1015,26 @@ btnPoseEstimate.addEventListener('click', () => {
   }
 });
 
+btnNavGoal.addEventListener('click', () => {
+  if (!goalSetMode && currentWorkflowMode !== 'navigation') {
+    showToast("Switch to Navigation mode before setting a goal.", "error");
+    return;
+  }
+  goalSetMode = !goalSetMode;
+  if (goalSetMode) {
+    poseEstimateMode = false;
+    btnPoseEstimate.classList.remove('tool-active');
+    btnNavGoal.classList.add('tool-active');
+    showToast("Set Goal mode activated. Click and drag an orientation arrow on the map.", "info");
+  } else {
+    btnNavGoal.classList.remove('tool-active');
+    dragStart = null;
+    dragEnd = null;
+  }
+});
+
 mapCanvas.addEventListener('mousedown', (e) => {
-  if (!poseEstimateMode) return;
+  if (!poseEstimateMode && !goalSetMode) return;
   const rect = mapCanvas.getBoundingClientRect();
   dragStart = {
     x: e.clientX - rect.left,
@@ -994,7 +1043,7 @@ mapCanvas.addEventListener('mousedown', (e) => {
 });
 
 mapCanvas.addEventListener('mousemove', (e) => {
-  if (!poseEstimateMode || !dragStart) return;
+  if ((!poseEstimateMode && !goalSetMode) || !dragStart) return;
   const rect = mapCanvas.getBoundingClientRect();
   dragEnd = {
     x: e.clientX - rect.left,
@@ -1004,7 +1053,7 @@ mapCanvas.addEventListener('mousemove', (e) => {
 });
 
 mapCanvas.addEventListener('mouseup', () => {
-  if (!poseEstimateMode || !dragStart || !dragEnd) return;
+  if ((!poseEstimateMode && !goalSetMode) || !dragStart || !dragEnd) return;
 
   const dx = dragEnd.x - dragStart.x;
   const dy = dragEnd.y - dragStart.y;
@@ -1034,12 +1083,18 @@ mapCanvas.addEventListener('mouseup', () => {
   const rosDy = -(dragEnd.y - dragStart.y);
   const yaw = Math.atan2(rosDy, rosDx);
 
-  // Publish to /initialpose
-  publishInitialPose(worldX, worldY, yaw);
+  // Publish to /initialpose or /goal_pose depending on active tool
+  if (goalSetMode) {
+    publishGoalPose(worldX, worldY, yaw);
+  } else {
+    publishInitialPose(worldX, worldY, yaw);
+  }
 
   // Reset
   poseEstimateMode = false;
+  goalSetMode = false;
   btnPoseEstimate.classList.remove('tool-active');
+  btnNavGoal.classList.remove('tool-active');
   dragStart = null;
   dragEnd = null;
   drawMap();
@@ -1048,6 +1103,11 @@ mapCanvas.addEventListener('mouseup', () => {
 function publishInitialPose(x, y, yaw) {
   socket.emit('initialpose_cmd', { x: x, y: y, yaw: yaw });
   showToast(`Published Initial Pose: x=${x.toFixed(2)}, y=${y.toFixed(2)}, yaw=${yaw.toFixed(2)}`, "success");
+}
+
+function publishGoalPose(x, y, yaw) {
+  socket.emit('goal_pose_cmd', { x: x, y: y, yaw: yaw });
+  showToast(`Published Nav Goal: x=${x.toFixed(2)}, y=${y.toFixed(2)}, yaw=${yaw.toFixed(2)}`, "success");
 }
 
 // ==========================================
@@ -1117,7 +1177,18 @@ socket.on('mode_status', (data) => {
   const modeBadge = document.getElementById('current-workflow-mode');
   const activeMapLabel = document.getElementById('current-active-map');
   const saveMapSection = document.getElementById('save-map-section');
-  
+
+  // Path plan overlay only makes sense while navigating
+  if (currentWorkflowMode !== 'navigation') {
+    planPoints = [];
+    if (goalSetMode) {
+      goalSetMode = false;
+      btnNavGoal.classList.remove('tool-active');
+      dragStart = null;
+      dragEnd = null;
+    }
+  }
+
   if (modeBadge) {
     modeBadge.className = 'status-badge';
     if (data.mode === 'mapping') {
