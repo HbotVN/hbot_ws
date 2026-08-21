@@ -33,3 +33,16 @@ TODO:
 [] Web interface: 
   - Add goal input from map 
   - Show global path 
+
+### [21/8/2026] Commit and split twist_mux/driver fixes + web Nav Goal feature
+
+[x] Committed hbot_bringup submodule: twist_mux arbitration between teleop and Nav2 cmd_vel, RPP controller + narrow-corridor costmap tuning, rviz/cartographer tweaks
+[x] Committed hbot_driver submodule: software-side motor/encoder polarity, fixed wheel_track vs wheel_base kinematics bug, cmd_vel watchdog, calibrate_polarities.py tooling
+[x] Split and committed hbot_ws main repo into 4 commits: submodule pointer bump, mapping/nav launch-script refactor + build/bringup hardening (use_ekf:=False, ROS self-sourcing), web Nav Goal + path overlay feature, repo meta (CLAUDE.md, skills, docs, test.py)
+[x] Web interface: Add goal input from map + Show global path - done via new "Set Goal" map tool + live plan overlay
+[x] Verified twist_mux priority + Nav Goal feature on real hardware
+
+TODO:
+[] Calib navigation params.
+[] Replace new LiDAR
+[] Push all commits to remotes - hbot_bringup, hbot_driver submodules and hbot_ws main are all ahead of origin, not yet pushed
