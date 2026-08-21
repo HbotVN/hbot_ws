@@ -37,7 +37,8 @@ Under the `src/` directory, the following ROS 2 packages are configured as submo
 * **Role**: The central orchestration package.
 * **Key Files**:
   * [hbot_bringup.launch.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_bringup/launch/hbot_bringup.launch.py): The main entry launch file handling arguments for simulation/real hardware, mapping, navigation, and localization.
-  * `config/`: Contains YAML parameters for navigation (`nav2_params.yaml`), SLAM (`slam_params.yaml`), and the serial driver (`yahboom_driver_params.yaml`).
+  * [base_bringup.launch.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_bringup/launch/base_bringup.launch.py): Production Pi entry point (driver + web dashboard + EKF). `hbot_web`'s teleop `cmd_vel` is published on `cmd_vel_teleop` and passed through a dedicated `nav2_velocity_smoother` instance named `teleop_velocity_smoother` (own `lifecycle_manager_smoother`, reusing the `velocity_smoother` block from `nav2_params.yaml` via a `RewrittenYaml` key rewrite) onto `cmd_vel_teleop_smoothed`. `hbot_bringup.launch.py`'s on-demand Nav2 stack similarly smooths its output onto `cmd_vel_nav_smoothed` (via a `SetRemap` around the vendored `navigation_launch.py` include, so the `navigation2` submodule itself is never edited). A `twist_mux` node (config `config/twist_mux.yaml`, teleop priority 100 > nav priority 10) arbitrates the two into the single final `cmd_vel` the driver consumes — see [walkthrough.md](walkthrough.md#2026-08-20-fixed-nav2-not-accepting-goals--velocity_smoother-node-name-collision) and the twist_mux follow-up entry for why both smoothers can't just write to `cmd_vel` directly.
+  * `config/`: Contains YAML parameters for navigation (`nav2_params.yaml`), SLAM (`slam_params.yaml`), and the serial driver (`yahboom_driver_params.yaml`). `nav2_params.yaml`'s `controller_server` uses the Regulated Pure Pursuit controller (`nav2_regulated_pure_pursuit_controller`) with a rectangular robot footprint (not `robot_radius`) and a tight inflation radius, tuned to fit through ~10cm-clearance corridors — see [walkthrough.md](walkthrough.md#2026-08-19-nav2-local-controller-swapped-to-rpp--narrow-corridor-costmap-tuning) for details.
 
 ### 2. [hbot_description](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_description)
 * **Role**: Defines the mechanical and physical properties of the robot.
@@ -46,10 +47,11 @@ Under the `src/` directory, the following ROS 2 packages are configured as submo
   * `CMakeLists.txt`: Instructs the build process to automatically compile the Xacro into `hbot.urdf` and export the Gazebo-compatible `hbot.sdf`.
 
 ### 3. [hbot_driver](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_driver)
-* **Role**: High-level hardware interfacing.
+* **Role**: High-level hardware interfacing (ported to C++; the Python node below is legacy).
 * **Key Files**:
-  * [hbot_driver_yahboom.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_driver/hbot_driver_yahboom/hbot_driver_yahboom.py): Subscribes to `cmd_vel`, translates linear/angular velocity to wheel commands (PWM) via serial communication with the Yahboom Rosmaster board, and publishes odometry, battery status, and optional IMU telemetry.
-  * `Rosmaster_Lib/`: Underlying python library for low-level serial communication with the Yahboom controller board.
+  * [hbot_driver_yahboom_node.cpp](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_driver/src/hbot_driver_yahboom_node.cpp): Subscribes to `cmd_vel`, translates linear/angular velocity to per-wheel RPM commands over serial to the Yahboom Rosmaster board, and publishes odometry, battery status, and optional IMU telemetry. Includes a `cmd_vel` watchdog (`cmd_vel_timeout` param, default `0.5s`): a timer checks time-since-last-`cmd_vel` and zeroes the motors if it's exceeded, so the robot stops itself if the publisher (teleop client, Nav2, etc.) disconnects or the network drops instead of coasting on the last command forever.
+  * [hbot_driver_yahboom.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_driver/hbot_driver_yahboom/hbot_driver_yahboom.py): Legacy Python implementation of the same node, predating the C++ port.
+  * `Rosmaster_Lib/`: Underlying python library for low-level serial communication with the Yahboom controller board (still used by `test/calibrate_pid.py`).
 
 ### 4. [hbot_simulation](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_simulation)
 * **Role**: Simulation environment.
