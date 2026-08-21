@@ -389,3 +389,27 @@ by side.
   container, which bypasses the image's `ENTRYPOINT` (where ROS 2 is normally
   sourced) — `docker compose up`/`run` were unaffected since those do go
   through the entrypoint.
+
+---
+
+## 2026-08-21: Web dashboard — Nav2 "Set Goal" tool + global path overlay
+
+- [hbot_web/web_node.py](../src/hbot_web/hbot_web/web_node.py): adds a
+  `goal_pose` publisher (`geometry_msgs/PoseStamped`) and a `plan` subscriber
+  (`nav_msgs/Path`, Nav2's global plan). The new `goal_pose_cmd` Socket.IO
+  handler takes `{x, y, yaw}` from the browser, converts `yaw` to a quaternion,
+  and publishes it on `goal_pose` for `bt_navigator` to pick up. `plan_callback`
+  re-emits each plan update to the browser as `plan_status` (a simple list of
+  `{x, y}` points) for the map overlay below. Switching workflow mode now also
+  emits an empty `plan_status` to clear any stale path from a previous
+  navigation session.
+- [templates/index.html](../src/hbot_web/hbot_web/templates/index.html) /
+  [static/js/main.js](../src/hbot_web/hbot_web/static/js/main.js): new
+  "Set Goal" map tool button, reusing the existing click-and-drag
+  orientation-arrow interaction from "2D Pose Estimate" (`dragStart`/`dragEnd`)
+  but rendered in orange and publishing to `goal_pose_cmd` instead of
+  `initialpose_cmd`. The two tools are mutually exclusive (activating one
+  deactivates the other) and "Set Goal" is guarded to only work in Navigation
+  mode. `drawMap()` now also strokes the live `plan_status` points as an
+  orange path overlay on the map canvas, and the overlay/tool state is reset
+  whenever the workflow mode leaves `navigation`.

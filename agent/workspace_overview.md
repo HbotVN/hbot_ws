@@ -66,6 +66,14 @@ Under the `src/` directory, the following ROS 2 packages are configured as submo
 ### 6. [navigation2](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/navigation2) & [slam_toolbox](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/slam_toolbox)
 * **Role**: Standard localization, mapping, and path planning components customized or referenced for this robot.
 
+### 7. [hbot_web](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web) (not a submodule — lives directly in this repo)
+* **Role**: Flask-SocketIO web dashboard — joystick teleop, telemetry (battery/odom/scan), map viewer with Nav2 pose-estimate/goal-setting tools, saved-map management (SQLite), and WiFi AP/STA control via `nmcli`.
+* **Key Files**:
+  * [web_node.py](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/web_node.py): the ROS 2 node + Flask/SocketIO server in one process. Publishes teleop `cmd_vel`, `initialpose`, and `goal_pose`; subscribes `odom`, `battery_voltage`, `scan`, `map`, `amcl_pose`, and Nav2's global `plan` (re-emitted to the browser as `plan_status` for the path overlay). `ROSLaunchManager` switches the robot between mapping/navigation/idle by shelling out to the scripts below.
+  * `scripts/start_mapping.sh` / `start_navigation.sh`: thin wrappers around `ros2 launch hbot_bringup hbot_bringup.launch.py ...` that `ROSLaunchManager` execs, each logging to its own timestamped file under `~/hbot_ws/log/`.
+  * [templates/index.html](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/templates/index.html) + [static/js/main.js](file:///home/huy/Documents/03.MyProjects/hbot_ws/src/hbot_web/hbot_web/static/js/main.js): canvas joystick, map canvas (with a live Nav2 global-path overlay and "2D Pose Estimate"/"Set Goal" click-drag tools, mutually exclusive, "Set Goal" gated to navigation mode), Socket.IO bindings, WiFi modals.
+  * `hbot_maps.db` (SQLite, under `MAPS_DIR`): saved-map registry (name, YAML/PGM paths, active flag).
+
 ---
 
 ## 🤖 Robot Specifications (Mechanical & Kinematics)

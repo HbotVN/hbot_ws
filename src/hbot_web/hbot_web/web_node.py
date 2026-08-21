@@ -9,9 +9,9 @@ import signal
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
-from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
+from geometry_msgs.msg import Twist, PoseWithCovarianceStamped, PoseStamped
 from std_msgs.msg import Float32
-from nav_msgs.msg import Odometry, OccupancyGrid
+from nav_msgs.msg import Odometry, OccupancyGrid, Path
 from sensor_msgs.msg import LaserScan
 from rclpy.parameter import ParameterType
 from rcl_interfaces.msg import ParameterDescriptor
@@ -237,6 +237,7 @@ class WebNode(Node):
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, self.cmd_vel_topic, 10)
         self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped, 'initialpose', 10)
+        self.goal_pose_pub = self.create_publisher(PoseStamped, 'goal_pose', 10)
 
         # Subscribers
         self.battery_voltage = 0.0
@@ -247,6 +248,7 @@ class WebNode(Node):
         self.create_subscription(OccupancyGrid, 'map', self.map_callback, 10)
         self.create_subscription(LaserScan, 'scan', self.scan_callback, qos_profile_sensor_data)
         self.create_subscription(PoseWithCovarianceStamped, 'amcl_pose', self.amcl_pose_callback, 10)
+        self.create_subscription(Path, 'plan', self.plan_callback, 10)
 
         # TF Buffer & Listener for map frame robot pose and laser pose lookup
         self.scan_frame_id = 'laser'
@@ -474,6 +476,16 @@ class WebNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error in amcl_pose_callback: {e}")
 
+    def plan_callback(self, msg):
+        try:
+            points = [
+                {'x': round(p.pose.position.x, 3), 'y': round(p.pose.position.y, 3)}
+                for p in msg.poses
+            ]
+            socketio.emit('plan_status', {'points': points})
+        except Exception as e:
+            self.get_logger().error(f"Error in plan_callback: {e}")
+
     def detect_wifi_interface(self):
         """Find the wifi interface name using nmcli or default to wlan0"""
         ret, stdout, stderr = run_cmd("nmcli -t -f DEVICE,TYPE device")
@@ -634,6 +646,36 @@ def handle_initialpose_cmd(data):
     except Exception as e:
         ros_node.get_logger().error(f"Error publishing Initial Pose: {e}")
 
+@socketio.on('goal_pose_cmd')
+def handle_goal_pose_cmd(data):
+    if not ros_node:
+        return
+    try:
+        x = float(data.get('x', 0.0))
+        y = float(data.get('y', 0.0))
+        yaw = float(data.get('yaw', 0.0))
+
+        import math
+        qz = math.sin(yaw / 2.0)
+        qw = math.cos(yaw / 2.0)
+
+        msg = PoseStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = ros_node.get_clock().now().to_msg()
+
+        msg.pose.position.x = x
+        msg.pose.position.y = y
+        msg.pose.position.z = 0.0
+        msg.pose.orientation.x = 0.0
+        msg.pose.orientation.y = 0.0
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
+
+        ros_node.goal_pose_pub.publish(msg)
+        ros_node.get_logger().info(f"Published Nav Goal from WebUI: x={x:.2f}, y={y:.2f}, yaw={yaw:.2f}")
+    except Exception as e:
+        ros_node.get_logger().error(f"Error publishing Nav Goal: {e}")
+
 @socketio.on('estop_toggle')
 def handle_estop_toggle(data):
     if not ros_node:
@@ -649,7 +691,10 @@ def handle_switch_mode(data):
         return
     mode = data.get('mode')  # 'mapping', 'navigation', or 'idle'
     map_id = data.get('map_id')  # required for 'navigation'
-    
+
+    # Clear any stale path plan overlay from a previous navigation session
+    socketio.emit('plan_status', {'points': []})
+
     if mode == 'mapping':
         ros_node.launch_manager.start_mapping_mode()
         emit('mode_status', {
