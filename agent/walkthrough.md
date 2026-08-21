@@ -364,3 +364,28 @@ by side.
   and the joystick touched mid-autonomous-drive to confirm the priority
   override behaves as expected before considered final.
 
+
+---
+
+## 2026-08-21: Launch mapping/navigation from scripts + build/bringup robustness fixes
+
+- [scripts/web_bringup.sh](../scripts/web_bringup.sh): launches `base_bringup.launch.py`
+  with `use_ekf:=False` — EKF was found not to help (see 2026-08-18 testing
+  notes above) so it's disabled in the production Pi bringup for now.
+- [hbot_web/web_node.py](../src/hbot_web/hbot_web/web_node.py)'s `ROSLaunchManager`
+  no longer builds `ros2 launch hbot_bringup hbot_bringup.launch.py ...` command
+  strings inline. `start_mapping_mode()` / `start_navigation_mode()` now shell out
+  to new [start_mapping.sh](../src/hbot_web/hbot_web/scripts/start_mapping.sh) /
+  [start_navigation.sh](../src/hbot_web/hbot_web/scripts/start_navigation.sh),
+  installed via `hbot_web/setup.py`'s `package_data`. Each script logs its own
+  run to a timestamped file under `~/hbot_ws/log/` (`mapping_<datetime>.log` /
+  `navigation_<datetime>.log`), separate from `web_bringup.log`, making it
+  easier to pull logs for a specific mapping/navigation session instead of
+  grepping the always-on dashboard log.
+- [build_packages.sh](../build_packages.sh) / [build_packages_pi.sh](../build_packages_pi.sh):
+  self-source `/opt/ros/humble/setup.bash` if `AMENT_PREFIX_PATH` isn't already
+  set in the shell, instead of failing deep inside CMake with an opaque error.
+  This was silently breaking when building via `docker exec` into a running
+  container, which bypasses the image's `ENTRYPOINT` (where ROS 2 is normally
+  sourced) — `docker compose up`/`run` were unaffected since those do go
+  through the entrypoint.

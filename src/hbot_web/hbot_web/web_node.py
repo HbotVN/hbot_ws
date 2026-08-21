@@ -22,6 +22,9 @@ try:
 except ImportError:
     HAS_TF2 = False
 
+# Directory holding the shell scripts used to launch mapping/navigation modes
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
+
 # SQLite and Maps configuration
 MAPS_DIR = '/root/hbot_ws/map'
 if not os.path.exists(MAPS_DIR):
@@ -130,7 +133,8 @@ class ROSLaunchManager:
         self.stop_active_launch()
         self.logger.info("Starting SLAM Mapping mode...")
         sim_time_str = "True" if self.node.use_sim_time else "False"
-        cmd = f"ros2 launch hbot_bringup hbot_bringup.launch.py slam:=True enable_navigation:=False use_sim_time:={sim_time_str}"
+        script_path = os.path.join(SCRIPTS_DIR, 'start_mapping.sh')
+        cmd = f"bash '{script_path}' {sim_time_str}"
         self.active_process = subprocess.Popen(
             cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
@@ -141,7 +145,8 @@ class ROSLaunchManager:
         self.stop_active_launch()
         self.logger.info(f"Starting Navigation mode with map: {yaml_path}")
         sim_time_str = "True" if self.node.use_sim_time else "False"
-        cmd = f"ros2 launch hbot_bringup hbot_bringup.launch.py slam:=False enable_navigation:=True map:='{yaml_path}' use_sim_time:={sim_time_str}"
+        script_path = os.path.join(SCRIPTS_DIR, 'start_navigation.sh')
+        cmd = f"bash '{script_path}' {sim_time_str} '{yaml_path}'"
         self.active_process = subprocess.Popen(
             cmd, shell=True, preexec_fn=os.setsid, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )

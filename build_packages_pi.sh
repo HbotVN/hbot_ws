@@ -5,6 +5,22 @@ set -e
 workspace_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$workspace_dir"
 
+# Source ROS 2 if this shell doesn't already have it (e.g. `docker exec` into a
+# container bypasses the image's ENTRYPOINT, so ROS_DISTRO/AMENT_PREFIX_PATH
+# etc. are never set - source it ourselves instead of failing deep inside CMake).
+if [ -z "$AMENT_PREFIX_PATH" ]; then
+	ros_setup="/opt/ros/humble/setup.bash"
+	if [ -f "$ros_setup" ]; then
+		echo "ROS 2 environment not sourced in this shell - sourcing $ros_setup"
+		# shellcheck disable=SC1090
+		source "$ros_setup"
+	else
+		echo "Error: ROS 2 environment not found (expected $ros_setup) and none is sourced." >&2
+		echo "This script is meant to run inside the docker/pi cross-compile container - see docker/pi/README.md." >&2
+		exit 1
+	fi
+fi
+
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 unset PYTHONHOME PYTHONPATH
 export PYTHON_EXECUTABLE="/usr/bin/python3"

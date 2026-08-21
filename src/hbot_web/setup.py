@@ -11,6 +11,7 @@ setup(
             'templates/*.html',
             'static/css/*.css',
             'static/js/*.js',
+            'scripts/*.sh',
         ],
     },
     data_files=[
